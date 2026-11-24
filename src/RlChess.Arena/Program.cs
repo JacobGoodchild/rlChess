@@ -129,6 +129,10 @@ foreach (var (reason, count) in drawReasons.OrderByDescending(kv => kv.Value))
     Console.WriteLine($"    {GameResult.Draw(reason).ReasonText}: {count}");
 foreach (var (reason, count) in winReasons.OrderByDescending(kv => kv.Value))
     Console.WriteLine($"  Decisive by {GameResult.Draw(reason).ReasonText.ToLowerInvariant()}: {count}");
+var elo = EloEstimate(p1Wins, draws, p2Wins);
+Console.WriteLine(elo is var (diff, margin)
+    ? $"  Elo difference:   {diff:+0;-0;0} ± {margin:0} for {p1.Name} (P1), 95% confidence"
+    : "  Elo difference:   can't estimate (one side won or lost every game)");
 Console.WriteLine($"  Average length:   {(double)totalPlies / games / 2:F1} moves ({(double)totalPlies / games:F1} half-moves)");
 Console.WriteLine($"  Speed:            {games / secs:F1} games/sec ({secs:F2} s total)");
 
@@ -138,6 +142,21 @@ if (pgnPath is not null)
     Console.WriteLine($"  Saved PGN to {Path.GetFullPath(pgnPath)}");
 }
 return 0;
+
+// Rating difference implied by the score, with a rough 95% margin (normal approximation).
+static (double Diff, double Margin)? EloEstimate(int wins, int draws, int losses)
+{
+    double n = wins + draws + losses;
+    if (n == 0) return null;
+    double score = (wins + 0.5 * draws) / n;
+    if (score <= 0 || score >= 1) return null;
+    static double ToElo(double s) => -400 * Math.Log10(1 / s - 1);
+    // Variance of a single game's result around the mean score.
+    double variance = (wins * Math.Pow(1 - score, 2) + draws * Math.Pow(0.5 - score, 2) + losses * Math.Pow(score, 2)) / n;
+    double se = Math.Sqrt(variance / n);
+    double lo = Math.Clamp(score - 1.96 * se, 1e-6, 1 - 1e-6), hi = Math.Clamp(score + 1.96 * se, 1e-6, 1 - 1e-6);
+    return (ToElo(score), (ToElo(hi) - ToElo(lo)) / 2);
+}
 
 static void PrintHelp()
 {
