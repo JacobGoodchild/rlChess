@@ -28,6 +28,7 @@ public partial class Home : IAsyncDisposable
     private bool _clickedSelected;                     // pressed on an already-selected piece
     private (int From, int To)? _pendingPromotion;
     private bool _thinking;
+    private string? _computerError;                    // shown if a computer player throws or cheats
     private int _generation;                           // bumps on new game / undo, cancels pending computer moves
     private CancellationTokenSource _cts = new();
 
@@ -106,6 +107,7 @@ public partial class Home : IAsyncDisposable
         _cts = new CancellationTokenSource();
         _thinking = false;
 
+        _computerError = null;
         _game = existing ?? new ChessGame(fen);
         _computer = _opponent.CreateComputer?.Invoke();
         _humanColor = _colorChoice switch
@@ -166,11 +168,20 @@ public partial class Home : IAsyncDisposable
             var move = await _computer.ChooseMoveAsync(_game.Position.Clone(), token);
             if (generation != _generation || token.IsCancellationRequested) return;
             _thinking = false;
+            if (!_game.Position.IsLegal(move))
+                throw new InvalidOperationException($"it chose an illegal move ({move.ToUci()}) in {_game.Position.ToFen()}");
             PlayMove(move, animate: true);
         }
         catch (OperationCanceledException)
         {
             return;
+        }
+        catch (Exception e) when (generation == _generation)
+        {
+            // A bug in a computer player shouldn't break the page: say what happened instead.
+            // Full details go to the browser's developer console.
+            Console.WriteLine($"[rlChess] Computer player '{_computer.Name}' failed: {e}");
+            _computerError = $"{_computer.Name} failed: {e.Message}";
         }
         finally
         {
@@ -186,6 +197,8 @@ public partial class Home : IAsyncDisposable
         _cts.Cancel();
         _cts = new CancellationTokenSource();
         _thinking = false;
+
+        _computerError = null;
 
         // Against a computer, take back until it's the human's turn again.
         do { _game.Undo(); }
@@ -477,6 +490,7 @@ public partial class Home : IAsyncDisposable
             if (VsComputer) return winner == _humanColor ? $"{r.ReasonText} · you won!" : $"{r.ReasonText} · {_computer?.Name ?? "computer"} wins";
             return $"{r.ReasonText} · {(winner == Color.White ? "White" : "Black")} wins";
         }
+        if (_computerError is not null) return _computerError;
         if (_thinking) return $"{_computer?.Name ?? "Computer"} is thinking…";
         var check = _game.Position.IsInCheck ? " · check!" : "";
         if (VsComputer) return (_game.SideToMove == _humanColor ? "Your turn" : "Waiting for computer") + check;

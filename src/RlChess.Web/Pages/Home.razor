@@ -76,7 +76,7 @@
                         <span><b>Two players</b> · same device</span>
                     }
                 </div>
-                <div class="status @(_game.IsOver ? "over" : "")">
+                <div class="status @(_game.IsOver ? "over" : "") @(_computerError is null ? "" : "failed")">
                     @if (_thinking) { <span class="dots" aria-hidden="true"><i></i><i></i><i></i></span> }
                     @StatusText()
                 </div>
