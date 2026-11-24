@@ -2,6 +2,7 @@
 using System.Text;
 using RlChess.Engine;
 using RlChess.Engine.Players;
+using RlChess.Players;
 using ChessGame = RlChess.Engine.Game;
 
 // rlChess Arena: plays N games between two players as fast as possible, alternating colours.

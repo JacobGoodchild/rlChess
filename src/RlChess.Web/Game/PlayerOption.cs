@@ -1,4 +1,5 @@
 using RlChess.Engine.Players;
+using RlChess.Players;
 
 namespace RlChess.Web.Game;
 

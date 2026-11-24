@@ -15,8 +15,9 @@ Done and working:
   en passant) skip the make/check/undo test. ~50M positions/sec in `perft 6` on the dev container
   (`dotnet run --project src/RlChess.Arena -c Release -- perft 6`).
 - **Players**: `IPlayer`, optional `IAsyncPlayer` (for slow players on the website),
-  `RandomPlayer` (optional seed), `PlayerRegistry` (one line per player → shows on website + Arena),
-  `MatchRunner.PlayGame`.
+  `RandomPlayer` (optional seed) and `MatchRunner.PlayGame` live in the engine. `PlayerRegistry`
+  (one line per player → shows on website + Arena) lives in `src/RlChess.Players`, which the Web
+  and Arena reference, so the owner's players can be in their own projects without circular refs.
 - **Arena** (`src/RlChess.Arena`): `--games --p1 --p2 --pgn --fen --max-plies --seed --threads`.
   Random vs random on the 4-core dev container: ~530 games/sec on one thread, ~1050+ with
   `--threads all`; slower (~650) with `--pgn` because move names (SAN) are then recorded.

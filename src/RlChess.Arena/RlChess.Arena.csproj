@@ -2,6 +2,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\RlChess.Engine\RlChess.Engine.csproj" />
+    <ProjectReference Include="..\RlChess.Players\RlChess.Players.csproj" />
   </ItemGroup>
 
   <PropertyGroup>

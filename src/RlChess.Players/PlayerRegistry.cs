@@ -1,8 +1,13 @@
-namespace RlChess.Engine.Players;
+using RlChess.Engine.Players;
+
+namespace RlChess.Players;
 
 /// <summary>
 /// The list of computer players offered by the website and the Arena.
 /// To add your own player, add one line to <see cref="All"/>.
+///
+/// Your player classes can live in this project, or in their own project that this one references
+/// (e.g. one with machine-learning packages). The engine itself stays free of players.
 /// </summary>
 public static class PlayerRegistry
 {

@@ -12,6 +12,7 @@ computer players (minimax, and later a reinforcement-learning player trained by 
 | Folder | What it is |
 | --- | --- |
 | `src/RlChess.Engine` | The rules library: board, legal moves, check/mate/draws, FEN, SAN/UCI, PGN (read and write). No UI code. |
+| `src/RlChess.Players` | The list of computer players the website and Arena offer (`PlayerRegistry`). Your players go here. |
 | `src/RlChess.Web` | The website (Blazor WebAssembly), running the same engine in the browser. |
 | `src/RlChess.Arena` | Console app that plays many games between two players and prints statistics. |
 | `tests/RlChess.Engine.Tests` | Unit tests and perft tests (move-generation proofs). |
@@ -51,7 +52,8 @@ The fast tests take about a second. The slow ones are deep perft runs (~600 mill
 
 ## How to add your own player
 
-1. Write a class that implements `IPlayer` (in `src/RlChess.Engine/Players`, or a new project):
+1. Write a class that implements `IPlayer`, in `src/RlChess.Players` (or in a new project that
+   `RlChess.Players` references, which is handy if it needs extra packages):
 
    ```csharp
    using RlChess.Engine;
@@ -72,7 +74,7 @@ The fast tests take about a second. The slow ones are deep perft runs (~600 mill
    }
    ```
 
-2. Register it with one line in `src/RlChess.Engine/Players/PlayerRegistry.cs`:
+2. Register it with one line in `src/RlChess.Players/PlayerRegistry.cs`:
 
    ```csharp
    new("mine", "My player", "What it does, in a few words.", () => new MyPlayer()),
