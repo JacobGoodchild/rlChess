@@ -110,6 +110,6 @@ start/end, `f` flips the board, Esc cancels. The square icon at the top switches
 - Chess pieces: by [Colin M.L. Burnett](https://commons.wikimedia.org/wiki/User:Cburnett), from
   Wikimedia Commons, used under the BSD licence (one of the licences the author offers). See
   [`src/RlChess.Web/wwwroot/pieces/LICENSE.md`](src/RlChess.Web/wwwroot/pieces/LICENSE.md).
-- Sounds: made from scratch for this project by `tools/make-sounds.sh` (synthesised with ffmpeg),
-  so they're covered by the MIT licence too.
+- Sounds: wooden knocks from [Impact Sounds](https://kenney.nl/assets/impact-sounds) by
+  [Kenney](https://www.kenney.nl), public domain (CC0); trimmed and mixed by `tools/make-sounds.sh`.
 - Perft reference numbers: [Chess Programming Wiki](https://www.chessprogramming.org/Perft_Results).

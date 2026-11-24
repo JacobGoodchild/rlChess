@@ -1,21 +1,34 @@
 #!/usr/bin/env bash
-# Generates the website's sound effects from simple synthesised tones (needs ffmpeg).
-# These sounds are made from scratch here, so they're covered by the repo's MIT licence.
+# Builds the website's sound effects from Kenney's "Impact Sounds" pack (CC0, https://kenney.nl/assets/impact-sounds).
+#
+# Usage: download the pack, then
+#   tools/make-sounds.sh path/to/folder-containing/impactWood_*.ogg
+# Needs ffmpeg. Output goes to src/RlChess.Web/wwwroot/sounds/ (the source pack isn't kept in the repo).
 set -euo pipefail
-O="$(dirname "$0")/../src/RlChess.Web/wwwroot/sounds"
-mkdir -p "$O"
-gen() { ffmpeg -loglevel error -y -f lavfi -i "aevalsrc='$2':s=44100:d=$3" -af "$4" -ac 1 -c:a pcm_s16le "$O/$1.wav"; }
+SRC="${1:?Give the folder containing impactWood_light_*.ogg and impactWood_heavy_*.ogg}"
+OUT="$(dirname "$0")/../src/RlChess.Web/wwwroot/sounds"
+mkdir -p "$OUT"
 
-# A wooden "tock": low body + mid knock + short noise click.
-gen move "0.55*sin(2*PI*190*t)*exp(-t*38)+0.35*sin(2*PI*610*t)*exp(-t*70)+0.25*sin(2*PI*1240*t)*exp(-t*140)+0.35*(random(0)*2-1)*exp(-t*260)" 0.16 \
-  "lowpass=f=3200,afade=t=out:st=0.12:d=0.04,volume=0.9"
-# Two quick knocks.
-gen capture "0.6*sin(2*PI*160*t)*exp(-t*30)+0.45*sin(2*PI*540*t)*exp(-t*55)+0.4*(random(0)*2-1)*exp(-t*200)+ between(t,0.045,1)*(0.45*sin(2*PI*230*(t-0.045))*exp(-(t-0.045)*35)+0.4*(random(1)*2-1)*exp(-(t-0.045)*220)+0.3*sin(2*PI*720*(t-0.045))*exp(-(t-0.045)*60))" 0.24 \
-  "lowpass=f=3600,afade=t=out:st=0.19:d=0.05,volume=0.85"
-# A knock with a soft bell on top.
-gen check "0.5*sin(2*PI*190*t)*exp(-t*38)+0.3*(random(0)*2-1)*exp(-t*260)+0.22*sin(2*PI*1318*t)*exp(-t*9)+0.12*sin(2*PI*1975*t)*exp(-t*12)" 0.45 \
-  "lowpass=f=4200,afade=t=out:st=0.35:d=0.1,volume=0.85"
-# Three rising soft notes.
-gen gameover "0.22*sin(2*PI*523*t)*exp(-t*4)+0.18*between(t,0.12,9)*sin(2*PI*659*(t-0.12))*exp(-(t-0.12)*4)+0.16*between(t,0.24,9)*sin(2*PI*784*(t-0.24))*exp(-(t-0.24)*3)" 0.9 \
-  "afade=t=out:st=0.7:d=0.2"
-echo "Sounds written to $O"
+# Common finishing: trim leading silence, mono 44.1 kHz, gentle fade-out, peak-normalise.
+finish="silenceremove=start_periods=1:start_threshold=-50dB,aresample=44100,afade=t=out:st=0.18:d=0.08,alimiter=limit=0.7:level=disabled"
+render() { ffmpeg -loglevel error -y "${@:2}" -ac 1 -c:a pcm_s16le "$OUT/$1.wav"; }
+
+L() { echo "$SRC/impactWood_light_00$1.ogg"; }
+H() { echo "$SRC/impactWood_heavy_00$1.ogg"; }
+
+# Move: a single light wooden clack.
+render move -i "$(L 2)" -af "$finish,atrim=0:0.26"
+
+# Capture: a heavier thud with a clack on top (a few ms apart, like a piece knocked aside).
+render capture -i "$(H 3)" -i "$(L 0)" -filter_complex \
+  "[1]adelay=12,volume=0.8[b];[0][b]amix=inputs=2:normalize=0,$finish,atrim=0:0.3"
+
+# Check: two quick light knocks, "tok-tok", distinct but soft.
+render check -i "$(L 0)" -i "$(L 4)" -filter_complex \
+  "[0]volume=0.9[a];[1]adelay=95,volume=0.75[b];[a][b]amix=inputs=2:normalize=0,silenceremove=start_periods=1:start_threshold=-50dB,aresample=44100,afade=t=out:st=0.3:d=0.08,alimiter=limit=0.7:level=disabled,atrim=0:0.38"
+
+# Game over: pieces settling, a thud then two lighter knocks.
+render gameover -i "$(H 2)" -i "$(L 3)" -i "$(L 1)" -filter_complex \
+  "[1]adelay=150,volume=0.6[b];[2]adelay=290,volume=0.4[c];[0][b][c]amix=inputs=3:normalize=0,silenceremove=start_periods=1:start_threshold=-50dB,aresample=44100,afade=t=out:st=0.5:d=0.12,alimiter=limit=0.7:level=disabled,atrim=0:0.62"
+
+echo "Sounds written to $OUT"
