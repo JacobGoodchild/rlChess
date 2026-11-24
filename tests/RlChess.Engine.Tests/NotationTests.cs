@@ -23,6 +23,12 @@ public class NotationTests
     [InlineData("4k3/8/8/8/8/8/8/1N2KN2 w - - 0 1", "b1d2", "Nbd2")]
     [InlineData("4k3/8/8/R7/8/8/8/R3K3 w - - 0 1", "a1a3", "R1a3")]
     [InlineData("4k3/8/8/8/8/Q1Q5/8/Q3K3 w - - 0 1", "a3b2", "Qa3b2")]
+    // Capture + promotion + check / mate, and castling that gives check.
+    [InlineData("3r3k/4P3/8/8/8/8/8/4K3 w - - 0 1", "e7d8q", "exd8=Q+")]
+    [InlineData("3r2k1/4Pppp/8/8/8/8/8/4K3 w - - 0 1", "e7d8q", "exd8=Q#")]
+    [InlineData("5k2/8/8/8/8/8/8/4K2R w K - 0 1", "e1g1", "O-O+")]
+    // Two knights on the same file: disambiguate by rank.
+    [InlineData("4k3/8/8/8/3N4/8/3N4/4K3 w - - 0 1", "d2f3", "N2f3")]
     // A pinned piece doesn't count as a second candidate.
     [InlineData("4k3/4r3/8/8/8/8/4N3/1N2K3 w - - 0 1", "b1c3", "Nc3")]
     public void ToSan(string fen, string uci, string expected) => Assert.Equal(expected, San(fen, uci));
