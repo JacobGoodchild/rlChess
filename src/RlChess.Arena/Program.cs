@@ -11,6 +11,8 @@ using ChessGame = RlChess.Engine.Game;
 //
 // Players are looked up in PlayerRegistry (src/RlChess.Players/PlayerRegistry.cs): "id" or "id:level".
 
+if (args.Length >= 2 && args[0] == "bench") return Bench.Run(args[1..]);
+
 // "perft <depth> [fen]": count move sequences (checks move generation and measures speed).
 if (args.Length >= 2 && args[0] == "perft")
 {
@@ -31,6 +33,8 @@ if (args.Length >= 2 && args[0] == "perft")
 int games = 100;
 string p1Id = "random", p2Id = "random";
 string? pgnPath = null;
+string? reportPath = null;
+string? exportPath = null;
 string? startFen = null;
 int maxPlies = 1000;
 int? seed = null;
@@ -45,6 +49,8 @@ for (int i = 0; i < args.Length; i++)
         case "--p1": p1Id = Next(); break;
         case "--p2": p2Id = Next(); break;
         case "--pgn": pgnPath = Next(); break;
+        case "--report": reportPath = Next(); break;
+        case "--export": exportPath = Next(); break;
         case "--fen": startFen = Next(); break;
         case "--max-plies": maxPlies = int.Parse(Next()); break;
         case "--seed": seed = int.Parse(Next()); break;
@@ -108,7 +114,7 @@ Parallel.For(0, games, new ParallelOptions { MaxDegreeOfParallelism = threads },
     },
     _ => { });
 
-int p1Wins = 0, p2Wins = 0, draws = 0;
+var stats = new MatchStats();
 long totalPlies = 0;
 var drawReasons = new Dictionary<GameEndReason, int>();
 var winReasons = new Dictionary<GameEndReason, int>();
@@ -121,17 +127,9 @@ for (int g = 0; g < games; g++)
     totalPlies += game.Moves.Count;
 
     var r = game.Result;
-    if (r.Outcome == GameOutcome.Draw)
-    {
-        draws++;
-        drawReasons[r.Reason] = drawReasons.GetValueOrDefault(r.Reason) + 1;
-    }
-    else
-    {
-        bool whiteWon = r.Outcome == GameOutcome.WhiteWins;
-        if (whiteWon == p1White) p1Wins++; else p2Wins++;
-        winReasons[r.Reason] = winReasons.GetValueOrDefault(r.Reason) + 1;
-    }
+    stats.Add(r, p1White);
+    var reasons = r.Outcome == GameOutcome.Draw ? drawReasons : winReasons;
+    reasons[r.Reason] = reasons.GetValueOrDefault(r.Reason) + 1;
 
     pgn?.Append(game.ToPgn(p1White ? $"{Label(p1Id)} (P1)" : $"{Label(p2Id)} (P2)", p1White ? $"{Label(p2Id)} (P2)" : $"{Label(p1Id)} (P1)",
         eventName: "rlChess Arena")).Append('\n');
@@ -142,15 +140,14 @@ double secs = Math.Max(sw.Elapsed.TotalSeconds, 1e-9);
 
 Console.WriteLine();
 Console.WriteLine($"Results after {games} games:");
-Console.WriteLine($"  {Label(p1Id)} (P1) wins: {p1Wins,6}  ({100.0 * p1Wins / games:F1}%)");
-Console.WriteLine($"  {Label(p2Id)} (P2) wins: {p2Wins,6}  ({100.0 * p2Wins / games:F1}%)");
-Console.WriteLine($"  Draws:            {draws,6}  ({100.0 * draws / games:F1}%)");
+Console.WriteLine($"  {Label(p1Id)} (P1) wins: {stats.Wins,6}  ({100.0 * stats.Wins / games:F1}%)");
+Console.WriteLine($"  {Label(p2Id)} (P2) wins: {stats.Losses,6}  ({100.0 * stats.Losses / games:F1}%)");
+Console.WriteLine($"  Draws:            {stats.Draws,6}  ({100.0 * stats.Draws / games:F1}%)");
 foreach (var (reason, count) in drawReasons.OrderByDescending(kv => kv.Value))
     Console.WriteLine($"    {GameResult.Draw(reason).ReasonText}: {count}");
 foreach (var (reason, count) in winReasons.OrderByDescending(kv => kv.Value))
     Console.WriteLine($"  Decisive by {GameResult.Draw(reason).ReasonText.ToLowerInvariant()}: {count}");
-var elo = EloEstimate(p1Wins, draws, p2Wins);
-Console.WriteLine(elo is var (diff, margin)
+Console.WriteLine(stats.Elo is var (diff, margin)
     ? $"  Elo difference:   {diff:+0;-0;0} ± {margin:0} for {Label(p1Id)} (P1), 95% confidence"
     : "  Elo difference:   can't estimate (one side won or lost every game)");
 Console.WriteLine($"  Average length:   {(double)totalPlies / games / 2:F1} moves ({(double)totalPlies / games:F1} half-moves)");
@@ -161,22 +158,22 @@ if (pgnPath is not null)
     File.WriteAllText(pgnPath, pgn!.ToString());
     Console.WriteLine($"  Saved PGN to {Path.GetFullPath(pgnPath)}");
 }
-return 0;
-
-// Rating difference implied by the score, with a rough 95% margin (normal approximation).
-static (double Diff, double Margin)? EloEstimate(int wins, int draws, int losses)
+if (exportPath is not null)
 {
-    double n = wins + draws + losses;
-    if (n == 0) return null;
-    double score = (wins + 0.5 * draws) / n;
-    if (score <= 0 || score >= 1) return null;
-    static double ToElo(double s) => -400 * Math.Log10(1 / s - 1);
-    // Variance of a single game's result around the mean score.
-    double variance = (wins * Math.Pow(1 - score, 2) + draws * Math.Pow(0.5 - score, 2) + losses * Math.Pow(score, 2)) / n;
-    double se = Math.Sqrt(variance / n);
-    double lo = Math.Clamp(score - 1.96 * se, 1e-6, 1 - 1e-6), hi = Math.Clamp(score + 1.96 * se, 1e-6, 1 - 1e-6);
-    return (ToElo(score), (ToElo(hi) - ToElo(lo)) / 2);
+    using (var w = new StreamWriter(exportPath))
+    {
+        w.Write(TrainingData.CsvHeader + "\n");
+        for (int g = 0; g < games; g++) TrainingData.WriteCsv(w, results[g], g + 1);
+    }
+    Console.WriteLine($"  Saved training data ({totalPlies:N0} positions) to {Path.GetFullPath(exportPath)}");
 }
+if (reportPath is not null)
+{
+    File.WriteAllText(reportPath, Report.Html(Label(p1Id), Label(p2Id), stats, drawReasons, winReasons, results,
+        g => g % 2 == 0, totalPlies, secs));
+    Console.WriteLine($"  Saved report to {Path.GetFullPath(reportPath)} (open it in a web browser)");
+}
+return 0;
 
 static void PrintHelp()
 {
@@ -184,12 +181,16 @@ static void PrintHelp()
         rlChess Arena - play many games between two players.
 
         Also: perft <depth> [fen]   count all move sequences to <depth> (speed/correctness check)
+              bench <id[:level]> [--positions N] [--seed N]
+                                    time how long a player takes per move (and positions/sec)
 
         Options:
           -n, --games <N>     number of games (default 100)
           --p1 <id[:level]>   first player, e.g. random or minimax:4 (default random)
           --p2 <id[:level]>   second player (default random)
           --pgn <file>        save all games to a PGN file
+          --report <file>     save a results page with a chart (open the .html file in a browser)
+          --export <file>     save every position as training data (CSV: game,ply,fen,move,result)
           --fen <fen>         start every game from this position
           --max-plies <N>     declare a draw after this many half-moves (default 1000)
           --seed <N>          seed for random players, for reproducible runs

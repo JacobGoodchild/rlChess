@@ -65,3 +65,30 @@ public class PgnTests
     [InlineData("1. f3 e5 2. g4 Qh4# 3. a3")]
     public void BadMovesThrow(string pgn) => Assert.Throws<FormatException>(() => Pgn.Parse(pgn));
 }
+
+public class PgnTerminationTests
+{
+    [Theory]
+    [InlineData("1-0", "Time out", GameEndReason.Timeout)]
+    [InlineData("0-1", "Time forfeit", GameEndReason.Timeout)]
+    [InlineData("1/2-1/2", "Draw agreed", GameEndReason.Agreement)]
+    [InlineData("1/2-1/2", "", GameEndReason.Agreement)]
+    [InlineData("1-0", "Think-time limit exceeded", GameEndReason.ThinkTimeExceeded)]
+    [InlineData("0-1", "Normal", GameEndReason.Resignation)]
+    public void ReasonComesFromTerminationTag(string result, string termination, GameEndReason expected)
+    {
+        var g = Pgn.Parse($"[Result \"{result}\"]\n[Termination \"{termination}\"]\n\n1. e4 e5 {result}");
+        Assert.Equal(expected, g.Game.Result.Reason);
+    }
+
+    [Fact]
+    public void RoundTripKeepsReasonAndExtraTags()
+    {
+        var g = new Game();
+        g.Play("d4");
+        g.End(GameResult.Win(Color.Black, GameEndReason.Timeout));
+        var parsed = Pgn.Parse(g.ToPgn("A", "B", extraTags: [("Mode", "vs computer")]));
+        Assert.Equal(GameResult.Win(Color.Black, GameEndReason.Timeout), parsed.Game.Result);
+        Assert.Equal("vs computer", parsed.Tags["Mode"]);
+    }
+}

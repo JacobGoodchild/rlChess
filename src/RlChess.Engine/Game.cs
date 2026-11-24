@@ -85,7 +85,9 @@ public sealed class Game
     }
 
     /// <summary>Exports the game as PGN.</summary>
-    public string ToPgn(string white = "?", string black = "?", string eventName = "rlChess game", DateTime? date = null)
+    /// <param name="extraTags">More tags to write after the standard ones, e.g. ("Mode", "vs computer").</param>
+    public string ToPgn(string white = "?", string black = "?", string eventName = "rlChess game", DateTime? date = null,
+        IEnumerable<(string Key, string Value)>? extraTags = null)
     {
         if (!_recordSan) throw new InvalidOperationException("This game was created with recordSan: false, so it can't be exported as PGN.");
         var sb = new StringBuilder();
@@ -103,6 +105,7 @@ public sealed class Game
             Tag("FEN", StartFen);
         }
         if (Result.IsOver) Tag("Termination", Result.ReasonText);
+        if (extraTags is not null) foreach (var (k, v) in extraTags) Tag(k, v);
         sb.Append('\n');
 
         var start = Position.FromFen(StartFen);

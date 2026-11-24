@@ -2,7 +2,7 @@
 
 Read this first. It's the hand-over log between work sessions.
 
-## Status (end of session 2)
+## Status (end of session 3)
 
 ### Engine (`src/RlChess.Engine`)
 - 64-square board with pre-computed tables; pseudo-legal generation + legality filter with a
@@ -56,6 +56,32 @@ Read this first. It's the hand-over log between work sessions.
 - Sounds: Kenney "Impact Sounds" (CC0), built by `tools/make-sounds.sh <folder with the .ogg files>`
   (the source pack is not kept in the repo).
 
+### Session 3 additions
+- **Pages** (Blazor routes): `/` Play (`Pages/Home.razor(.cs)`), `/arena`, `/games`, `/editor`.
+  Shared header `Components/TopBar.razor` (page links + settings menu); `Layout/MainLayout.razor`
+  wraps every page in `.app` with the theme/piece-set classes and `--anim` (piece slide time).
+- **Services** (`Services/`, registered in `Program.cs`, one instance per visit):
+  - `Prefs`: all settings (board, pieces, mute, volume, animation, hover hints, think limit), loads
+    board.js once, sounds, clipboard, downloads. Raises `Changed`.
+  - `AppState`: `Play` (the Play page's game, saved in `Home.DisposeAsync` and put back by
+    `Restore`), `Review` (Games/Arena/Editor ask the Play page to open a game), `PlayFromFen`
+    (editor → new-game dialog with `StartFen`), `EditorFen`, and the `ArenaSession`.
+  - `GameHistory`: games as PGN in localStorage key `rlchess.history`, separated by U+001E,
+    newest first, max 200. Extra PGN tags: Mode, Time, Id. Saved when a game ends
+    (`Home.OnAfterRenderAsync`), when an unfinished game is replaced (`StartGame`), or a PGN is pasted.
+  - `ArenaSession`: runs the website Arena. One async loop per board slot; slots take the next game
+    number; fresh players per game; think limit = the settings' limit (over → loss). The page
+    re-renders on a 100 ms timer when `Version` changes. Leaving the page pauses it (`PausedByLeaving`).
+- Engine: `MatchStats` (wins/draws/losses, Elo ± margin, score interval, `ScoreChartSvg` used by the
+  website and the console report), `TrainingData` (CSV), `ISearchStats` (optional node count),
+  `Game.ToPgn(extraTags:)`, PGN Termination → end reason (our texts and lichess "Time forfeit").
+- Console Arena: `--report`, `--export`, `bench` (`Bench.cs`, `Report.cs`).
+- `ChessBoard`: hover hints (`HoverDests`, `OnHoverCallback`; JS reports mouse square changes) and
+  `EditMode` (every piece draggable, drop off-board = -1). `MiniBoard`: view-only small board.
+- Board textures: `tools/make-boards.py` generates `wwwroot/boards/{wood,marble}.jpg` from noise (no licences).
+- Local testing of other pages: python's http.server doesn't serve 404.html for deep links, so
+  navigate with the page links (GitHub Pages does serve 404.html, so deep links work live).
+
 ## Decisions / gotchas
 - Work straight on `main`; only push green builds.
 - Licences: repo MIT. Pieces: Cburnett (BSD option, verified on Commons), Fantasy/Spatial
@@ -73,6 +99,8 @@ Read this first. It's the hand-over log between work sessions.
   Playwright suite if the UI keeps growing.
 
 ## Ideas / next steps
+- Owner asked to hold off on: puzzle test sets, opening-book starts for the Arena, online play,
+  variants, installable app.
 - Owner: minimax player (Computer category, level = depth), then RL player (AI category).
 - Possible: multiple variations / nested lines in analysis, sub-second clock display tweaks,
   "berserk"-style options, an opening explorer from PGN files, automated UI tests.

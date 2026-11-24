@@ -5,6 +5,7 @@ using RlChess.Engine;
 using RlChess.Engine.Players;
 using RlChess.Players;
 using RlChess.Web.Game;
+using RlChess.Web.Services;
 using ChessGame = RlChess.Engine.Game;
 
 namespace RlChess.Web.Pages;
@@ -16,7 +17,10 @@ namespace RlChess.Web.Pages;
 /// </summary>
 public partial class Home : IAsyncDisposable
 {
-    [Inject] private IJSRuntime JS { get; set; } = default!;
+    [Inject] private Prefs Prefs { get; set; } = default!;
+    [Inject] private AppState State { get; set; } = default!;
+    [Inject] private GameHistory History { get; set; } = default!;
+    [Inject] private NavigationManager Nav { get; set; } = default!;
 
     // ------------------------------------------------------------------ game & seats
     private GameSetup _setup = new();                 // last choices in the dialog (remembered)
@@ -37,7 +41,7 @@ public partial class Home : IAsyncDisposable
     private bool _paused;                             // computer vs computer
     private string _speed = "normal";                 // computer vs computer: slow | normal | fast
     private string? _computerError;
-    private TimeSpan? _thinkLimit = TimeSpan.FromSeconds(10); // per move, when there's no clock
+    private TimeSpan? ThinkLimit => Prefs.ThinkLimit;  // per move, when there's no clock
 
     // ------------------------------------------------------------------ view & board input
     private readonly PieceTracker _tracker = new();
@@ -52,6 +56,8 @@ public partial class Home : IAsyncDisposable
     private (int From, int To)? _pendingPromotion;
     private readonly List<(int From, int To)> _premoves = new(); // queued premoves, played in order
     private Piece[]? _virtual;                        // the board with queued premoves applied (null = none)
+    private int _hoverSquare = -1;                    // mouse over one of your pieces: its moves are hinted
+    private HashSet<int>? _hoverDests;
 
     // ------------------------------------------------------------------ analysis (one variation)
     private bool _analysing;
@@ -64,12 +70,14 @@ public partial class Home : IAsyncDisposable
     // ------------------------------------------------------------------ draw offers (two players)
     private Color? _drawOfferBy;
 
+    // ------------------------------------------------------------------ history & names
+    private bool _historySaved;                       // this game is already in the Games list
+    private string? _whiteName, _blackName;           // names from a loaded/reviewed game
+    private string? _reviewNote;                      // e.g. "From your games" (shown instead of the mode)
+
     // ------------------------------------------------------------------ UI bits
-    private bool _muted;
-    private bool _showSettings;
     private bool _showNewGame;
-    private string _boardTheme = "brown";
-    private string _pieceSet = "cburnett";
+    private string? _dialogFen;                       // the new-game dialog starts from this position
     private bool _showFlash;
     private string _flash = "";
     private string _fenInput = "";
@@ -77,7 +85,8 @@ public partial class Home : IAsyncDisposable
     private string _pgnInput = "";
     private string? _pgnError;
     private ElementReference _moveListEl;
-    private IJSObjectReference? _module, _keys;
+    private IJSObjectReference? _keys;
+    private IJSObjectReference? _module => Prefs.Module;
     private DotNetObjectReference<Home>? _self;
     private PeriodicTimer? _flagTimer;
     private bool _disposed;
@@ -96,25 +105,40 @@ public partial class Home : IAsyncDisposable
     {
         if (firstRender)
         {
-            _module = await JS.InvokeAsync<IJSObjectReference>("import", "./js/board.js");
+            await Prefs.LoadAsync();
             _self = DotNetObjectReference.Create(this);
-            _keys = await _module.InvokeAsync<IJSObjectReference>("attachKeys", _self);
-            await _module.InvokeVoidAsync("preloadSounds", (object)new[] { "move", "capture", "check", "gameover" });
+            _keys = await _module!.InvokeAsync<IJSObjectReference>("attachKeys", _self);
+            _setup = GameSetup.Deserialize(await Prefs.Get("setup"));
 
-            _muted = await GetSetting("muted") == "1";
-            var board = await GetSetting("board");
-            if (Settings.BoardThemes.Any(t => t.Name == board)) _boardTheme = board!;
-            var pieces = await GetSetting("pieces");
-            if (Settings.PieceSets.Any(p => p.Id == pieces)) _pieceSet = pieces!;
-            _thinkLimit = Settings.ParseThinkLimit(await GetSetting("thinklimit"));
-            _setup = GameSetup.Deserialize(await GetSetting("setup"));
-            StartGame(_setup);
+            bool restored = false;
+            if (State.Play is { } saved)
+            {
+                State.Play = null;
+                Restore(saved);
+                restored = true;
+            }
+            if (State.Review is { } review)
+            {
+                State.Review = null;
+                OpenForReview(review); // an unfinished game it replaces goes into the history
+            }
+            else if (!restored)
+            {
+                StartGame(_setup);
+            }
+            if (State.PlayFromFen is { } fen)
+            {
+                State.PlayFromFen = null;
+                _dialogFen = fen;
+                _showNewGame = true;
+            }
             StateHasChanged();
             _ = WatchFlags();
         }
         else if (_module is not null)
         {
             await _module.InvokeVoidAsync("scrollMoveIntoView", _moveListEl);
+            if (_game.IsOver && !_historySaved) await SaveToHistory();
         }
     }
 
@@ -122,7 +146,12 @@ public partial class Home : IAsyncDisposable
 
     private void StartGame(GameSetup setup, string? fen = null, ChessGame? existing = null)
     {
+        // An unfinished game that's being replaced goes into the history too.
+        if (!_historySaved && _game.Moves.Count > 0) _ = SaveToHistory();
         AbandonPendingWork();
+        _historySaved = existing is not null; // loaded games are already saved somewhere
+        _whiteName = _blackName = null;
+        _reviewNote = null;
         _mode = setup.Mode;
         _game = existing ?? new ChessGame(fen);
         _computerError = null;
@@ -175,8 +204,65 @@ public partial class Home : IAsyncDisposable
     {
         _showNewGame = false;
         _setup = setup;
-        await SaveSetting("setup", setup.Serialize());
-        StartGame(setup);
+        await Prefs.Set("setup", setup.Serialize());
+        var fen = _dialogFen;
+        _dialogFen = null;
+        StartGame(setup, fen);
+    }
+
+    private void CancelDialog()
+    {
+        _showNewGame = false;
+        _dialogFen = null;
+    }
+
+    /// <summary>Opens a finished or saved game to look through (a two-player board, so you can also play on from it).</summary>
+    private void OpenForReview(ReviewRequest r)
+    {
+        StartGame(new GameSetup { Mode = GameMode.TwoPlayers }, existing: r.Game);
+        _whiteName = r.White;
+        _blackName = r.Black;
+        _reviewNote = r.Note;
+    }
+
+    /// <summary>Puts back the game that was on this page before visiting another page.</summary>
+    private void Restore(SavedPlay p)
+    {
+        AbandonPendingWork();
+        _setup = p.Setup;
+        _mode = p.Mode;
+        _game = p.Game;
+        p.Bots.CopyTo(_bots, 0);
+        p.BotLabels.CopyTo(_botLabels, 0);
+        _clock = p.Clock;
+        _orientation = p.Orientation;
+        _historySaved = p.HistorySaved;
+        _whiteName = p.WhiteName;
+        _blackName = p.BlackName;
+        _paused = p.Paused;
+        _speed = p.Speed;
+        _computerError = null;
+        _tracker.Reset(_game.Position);
+        ShowMain(_game.Moves.Count, animate: false, sound: false);
+        if (_clock is not null && _game.Moves.Count > 0 && !_game.IsOver && !_paused) _clock.Start(_game.SideToMove);
+        ScheduleNext();
+    }
+
+    private string ModeName => _mode switch
+    {
+        GameMode.VsComputer => "vs computer",
+        GameMode.TwoPlayers => "two players",
+        _ => "computer vs computer",
+    };
+
+    private async Task SaveToHistory()
+    {
+        if (_historySaved || _game.Moves.Count == 0) return;
+        _historySaved = true;
+        var copy = new ChessGame(_game.StartFen);
+        foreach (var m in _game.Moves) copy.Play(m);
+        if (_game.IsOver) copy.End(_game.Result);
+        await History.Add(copy, NameOf(Color.White), NameOf(Color.Black), ModeName + (_clock is null ? "" : $" · {_clock.Control.Name}"));
     }
 
     private void Rematch()
@@ -231,7 +317,7 @@ public partial class Home : IAsyncDisposable
             if (clockWasRunning) _clock!.Start(side);
 
             // Limit: the clock if there is one, else the think-time setting.
-            TimeSpan? limit = _clock is { IsRunning: true } ? _clock.Remaining(side) : _clock is null ? _thinkLimit : null;
+            TimeSpan? limit = _clock is { IsRunning: true } ? _clock.Remaining(side) : _clock is null ? ThinkLimit : null;
             using var thinkCts = CancellationTokenSource.CreateLinkedTokenSource(token);
             var sw = Stopwatch.StartNew();
             Task<Move> task;
@@ -263,7 +349,7 @@ public partial class Home : IAsyncDisposable
             var move = await task;
             if (generation != _generation) return;
             // A synchronous player can't be interrupted; check afterwards.
-            if (_clock is null && _thinkLimit is TimeSpan tl && sw.Elapsed > tl + TimeSpan.FromSeconds(1)) { OutOfTime(side, thinkLimit: true); return; }
+            if (_clock is null && ThinkLimit is TimeSpan tl && sw.Elapsed > tl + TimeSpan.FromSeconds(1)) { OutOfTime(side, thinkLimit: true); return; }
             if (_clock is not null && _clock.IsFlagged(side)) { OutOfTime(side, thinkLimit: false); return; }
             if (!_game.Position.IsLegal(move))
                 throw new InvalidOperationException($"it chose an illegal move ({move.ToUci()}) in {_game.Position.ToFen()}");
@@ -298,7 +384,7 @@ public partial class Home : IAsyncDisposable
         _game.End(thinkLimit
             ? GameResult.Win(side.Opponent(), GameEndReason.ThinkTimeExceeded)
             : TimeoutRules.Result(_game.Position, side));
-        if (thinkLimit) _computerError = $"{_botLabels[(int)side]} took longer than {Settings.ThinkLimitLabel(_thinkLimit)} to move.";
+        if (thinkLimit) _computerError = $"{_botLabels[(int)side]} took longer than {Settings.ThinkLimitLabel(ThinkLimit)} to move.";
         ShowMain(_game.Moves.Count, animate: false, sound: false);
         _ = Sound("gameover");
         StateHasChanged();
@@ -622,7 +708,7 @@ public partial class Home : IAsyncDisposable
             case "f": Flip(); break;
             case "Escape":
                 ClearSelection(); _pendingPromotion = null; ClearPremoves();
-                _showNewGame = false; _showSettings = false;
+                CancelDialog();
                 break;
         }
         StateHasChanged();
@@ -649,8 +735,24 @@ public partial class Home : IAsyncDisposable
 
     private bool _lastInputWasDrag;
 
+    [Inject] private IJSRuntime JS { get; set; } = default!;
+
+    /// <summary>The mouse moved onto another square (-1 = off the board): hint that piece's moves.</summary>
+    private void OnHover(int sq)
+    {
+        _hoverSquare = -1;
+        _hoverDests = null;
+        if (!Prefs.HoverDots || sq < 0 || _selected >= 0 || MovableColor is not Color mine || !At(sq).IsColor(mine)) return;
+        _hoverSquare = sq;
+        _hoverDests = PremoveMode
+            ? Premoves.Destinations(At, _game.Position.Castling, sq)
+            : _shown.GetLegalMoves().Where(m => m.From == sq).Select(m => m.To).ToHashSet();
+    }
+
     private void ClearSelection()
     {
+        _hoverSquare = -1;
+        _hoverDests = null;
         _selected = -1;
         _dests = null;
         _destsArePremove = false;
@@ -782,6 +884,8 @@ public partial class Home : IAsyncDisposable
             var parsed = Pgn.Parse(_pgnInput);
             _pgnError = null;
             StartGame(new GameSetup { Mode = GameMode.TwoPlayers }, existing: parsed.Game);
+            _historySaved = false; // a pasted game is new: keep it in your Games list
+            _ = SaveGameNow(parsed.Tags.GetValueOrDefault("White"), parsed.Tags.GetValueOrDefault("Black"));
             _pgnInput = "";
             Flash($"Game loaded · {parsed.Game.Moves.Count} moves");
         }
@@ -789,6 +893,21 @@ public partial class Home : IAsyncDisposable
         {
             _pgnError = e.Message;
         }
+    }
+
+    /// <summary>Saves a just-loaded game to the history with its own names.</summary>
+    private async Task SaveGameNow(string? white, string? black)
+    {
+        _whiteName = string.IsNullOrWhiteSpace(white) || white == "?" ? null : white;
+        _blackName = string.IsNullOrWhiteSpace(black) || black == "?" ? null : black;
+        _reviewNote = "Loaded game";
+        await SaveToHistory();
+    }
+
+    private void EditPosition()
+    {
+        State.EditorFen = _shown.ToFen();
+        Nav.NavigateTo("editor");
     }
 
     private async Task CopyFen()
@@ -812,30 +931,6 @@ public partial class Home : IAsyncDisposable
 
     // ================================================================== settings & feedback
 
-    private async Task SetBoardTheme(string name)
-    {
-        _boardTheme = name;
-        await SaveSetting("board", name);
-    }
-
-    private async Task SetPieceSet(string id)
-    {
-        _pieceSet = id;
-        await SaveSetting("pieces", id);
-    }
-
-    private async Task SetThinkLimit(TimeSpan? limit)
-    {
-        _thinkLimit = limit;
-        await SaveSetting("thinklimit", Settings.FormatThinkLimit(limit));
-    }
-
-    private async Task ToggleMute()
-    {
-        _muted = !_muted;
-        await SaveSetting("muted", _muted ? "1" : "0");
-    }
-
     private async void Flash(string text)
     {
         _flash = text;
@@ -845,14 +940,6 @@ public partial class Home : IAsyncDisposable
         if (_flash == text) { _showFlash = false; StateHasChanged(); }
     }
 
-    private async Task<string?> GetSetting(string key) =>
-        _module is null ? null : await _module.InvokeAsync<string?>("getSetting", key);
-
-    private async Task SaveSetting(string key, string value)
-    {
-        if (_module is not null) await _module.InvokeVoidAsync("setSetting", key, value);
-    }
-
     private void PlayMoveSound(Move move, Position after)
     {
         if (after.IsInCheck) _ = Sound("check");
@@ -860,22 +947,17 @@ public partial class Home : IAsyncDisposable
         else _ = Sound("move");
     }
 
-    private async Task Sound(string name, int delayMs = 0)
-    {
-        if (_muted || _module is null) return;
-        if (delayMs > 0) await Task.Delay(delayMs);
-        await _module.InvokeVoidAsync("playSound", name);
-    }
+    private Task Sound(string name, int delayMs = 0) => Prefs.PlaySound(name, delayMs);
 
     // ================================================================== display helpers
 
-    private string NameOf(Color c) => _mode switch
+    private string NameOf(Color c) => (c == Color.White ? _whiteName : _blackName) ?? _mode switch
     {
         GameMode.TwoPlayers => c == Color.White ? "White" : "Black",
         _ => IsBot(c) ? _botLabels[(int)c] : "You",
     };
 
-    private string ModeText => _mode switch
+    private string ModeText => _reviewNote ?? _mode switch
     {
         GameMode.VsComputer => $"vs {_botLabels[(int)HumanColor.Opponent()]}",
         GameMode.TwoPlayers => "Two players · same device",
@@ -977,13 +1059,21 @@ public partial class Home : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
+        // Keep the game so it's still here when coming back from another page.
+        _clock?.Stop();
+        if (_game.Moves.Count > 0 || _mode == GameMode.ComputerVsComputer || _game.StartFen != Position.StartFen)
+            State.Play = new SavedPlay
+            {
+                Setup = _setup, Mode = _mode, Game = _game, Bots = (IPlayer?[])_bots.Clone(), BotLabels = (string[])_botLabels.Clone(),
+                Clock = _clock, Orientation = _orientation, HistorySaved = _historySaved, WhiteName = _whiteName, BlackName = _blackName,
+                Paused = _paused, Speed = _speed,
+            };
         _disposed = true;
         _cts.Cancel();
         _flagTimer?.Dispose();
         try
         {
             if (_keys is not null) { await _keys.InvokeVoidAsync("dispose"); await _keys.DisposeAsync(); }
-            if (_module is not null) await _module.DisposeAsync();
         }
         catch (JSDisconnectedException) { }
         _self?.Dispose();

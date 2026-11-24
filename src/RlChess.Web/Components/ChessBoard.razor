@@ -29,11 +29,18 @@
         @foreach (var p in Pieces)
         {
             <div @key="p.Id"
-                 class="piece @PieceClass(p.Piece) @(MovableColor is Color mc && p.Piece.Color() == mc ? "mine" : "")"
+                 class="piece @PieceClass(p.Piece) @(EditMode || MovableColor is Color mc && p.Piece.Color() == mc ? "mine" : "")"
                  data-sq="@p.Square"
                  style="@Pos(p.Square)"></div>
         }
 
+        @if (HoverDests is not null && Dests is null)
+        {
+            foreach (var d in HoverDests)
+            {
+                <div class="hl dest hover @(IsOccupied(d) ? "occupied" : "")" style="@Pos(d)"></div>
+            }
+        }
         @if (Dests is not null)
         {
             foreach (var d in Dests)
@@ -100,6 +107,13 @@
     /// <summary>The destination dots are premove targets (drawn in the premove colour).</summary>
     [Parameter] public bool PremoveDests { get; set; }
     [Parameter] public EventCallback OnRightClickCallback { get; set; }
+    /// <summary>Faint hints of where the hovered piece could go (only when nothing is selected).</summary>
+    [Parameter] public IReadOnlyCollection<int>? HoverDests { get; set; }
+    [Parameter] public int HoverSquare { get; set; } = -1;
+    /// <summary>The mouse moved onto another square (-1 = left the board). Only reported if set.</summary>
+    [Parameter] public EventCallback<int> OnHoverCallback { get; set; }
+    /// <summary>Board editor: every piece can be dragged, including off the board.</summary>
+    [Parameter] public bool EditMode { get; set; }
     [Parameter] public EventCallback<(int From, int To, bool Dragged)> OnSquareUpCallback { get; set; }
 
     private ElementReference _boardEl;
@@ -145,6 +159,8 @@
     [JSInvokable] public Task OnSquareUp(int from, int to, bool dragged) => OnSquareUpCallback.InvokeAsync((from, to, dragged));
 
     [JSInvokable] public Task OnRightClick() => OnRightClickCallback.InvokeAsync();
+
+    [JSInvokable] public Task OnHover(int sq) => OnHoverCallback.HasDelegate ? OnHoverCallback.InvokeAsync(sq) : Task.CompletedTask;
 
     public async ValueTask DisposeAsync()
     {

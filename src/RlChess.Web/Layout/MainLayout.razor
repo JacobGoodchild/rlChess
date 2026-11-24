@@ -1,3 +1,27 @@
 ﻿@inherits LayoutComponentBase
+@implements IDisposable
+@inject Prefs Prefs
 
-@Body
+@* Every page sits inside .app, which carries the board theme, piece set and animation speed. *@
+<div class="app board-theme-@Prefs.BoardTheme pieces-@Prefs.PieceSet" style="--anim: @AnimDuration">
+    @Body
+    <footer class="footer">
+        Pieces: @Settings.PieceSets.First(p => p.Id == Prefs.PieceSet).Credit · Sounds: Kenney (CC0) ·
+        <a href="https://github.com/JacobGoodchild/rlChess" target="_blank" rel="noopener">Source &amp; credits</a>
+    </footer>
+</div>
+
+@code {
+    private string AnimDuration => Settings.AnimationSpeeds.FirstOrDefault(a => a.Key == Prefs.Animation).Duration ?? ".2s";
+
+    protected override void OnInitialized() => Prefs.Changed += OnChanged;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender) await Prefs.LoadAsync();
+    }
+
+    private void OnChanged() => InvokeAsync(StateHasChanged);
+
+    public void Dispose() => Prefs.Changed -= OnChanged;
+}

@@ -45,7 +45,19 @@ Speed/correctness check of the move generator: `dotnet run --project src/RlChess
 (optionally followed by a FEN).
 
 Arena options: `--games`, `--p1`, `--p2`, `--pgn <file>`, `--fen <start position>`, `--max-plies`,
-`--seed` (reproducible random players) and `--threads` (a number, or `all` for every CPU core).
+`--seed` (reproducible random players) and `--threads` (a number, or `all` for every CPU core). Also:
+
+- `--report results.html`: saves a results page with a chart of the score as the games went on
+  (open it in any browser; it works offline).
+- `--export data.csv`: saves every position as training data for a learning player. One row per
+  position: `game,ply,fen,move,result`, where `move` is the move played (UCI, e.g. `e2e4`) and
+  `result` is how the game ended *for the side to move* (1 win, 0 draw, -1 loss).
+
+**How fast is my player?** `dotnet run --project src/RlChess.Arena -c Release -- bench minimax:4`
+times it on 50 varied positions (`--positions N`, `--seed N`; the same seed gives the same
+positions, so you can compare versions of your code). It prints the time per move. If your player
+also implements `ISearchStats` (one property: how many positions it looked at for the last
+move), it prints positions per second too.
 
 The fast tests take about a second. The slow ones are deep perft runs (~600 million positions, about
 10 seconds). Every push to `main` builds, runs the fast tests and deploys the website.
@@ -125,10 +137,22 @@ in games with a clock, the clock is the limit.
 - **Analyse:** the button above the move list lets either side try other moves from any position;
   your line appears under the move list as a variation, and the real game is left untouched.
   (Paused during a game against the computer; not available mid-game with a clock.)
+- **Arena page:** pick two computer players, how many games and how many boards to show at once
+  (up to 16), and watch the whole match live with a running score, a rating-difference estimate
+  and a chart. Colours swap every game. Click a board to watch it bigger, or a finished game to
+  look through it. Download all the games (PGN) or the training data (CSV, as above). The match
+  pauses if you go to another page.
+- **Games page:** every game you play is saved in this browser (newest 200). Open one to look
+  through it, copy its PGN, or download them all. A game you leave unfinished is saved as unfinished.
+- **Editor page:** set up any position (drag pieces, drag them off to remove, pick pieces from the
+  bars to place them), choose who moves and castling rights, then *Play from here* or *Analyse*.
+- **Loading games:** paste a PGN (e.g. from lichess or chess.com) or a FEN under
+  "Load a game · position · export" on the Play page.
 - **Other:** right-click/drag draws circles and arrows (Shift = red, Alt/Ctrl = blue). Keyboard:
   ← → step through moves, ↑ ↓ jump to the start/end, `f` flips the board, Esc cancels.
-  The gear menu has board colours, piece sets and the computer think-time limit.
-  Two-player games have a small "Offer draw" button.
+  The gear menu has board colours (including wood and marble), piece sets, how fast pieces move,
+  move hints when hovering over a piece, volume, and the computer think-time limit.
+  Two-player games have a small "Offer draw" button. Going to another page and back keeps your game.
 
 ## Rules notes
 

@@ -1,0 +1,311 @@
+@page "/editor"
+@using System.Text
+@inject AppState State
+@inject Prefs Prefs
+@inject NavigationManager Nav
+
+<PageTitle>Board editor · rlChess</PageTitle>
+
+<TopBar />
+
+<main class="game editor">
+    <section class="board-col">
+        <div class="palette" role="toolbar" aria-label="Black pieces">
+            @foreach (var t in PaletteTypes) { @Tool(t.Of(Color.Black)) }
+        </div>
+        <ChessBoard Pieces="_tracker.Pieces"
+                    Orientation="_orientation"
+                    EditMode="true"
+                    Animate="true"
+                    CheckSquare="CheckSquare"
+                    OnSquareUpCallback="OnSquareUp" />
+        <div class="palette" role="toolbar" aria-label="White pieces">
+            @foreach (var t in PaletteTypes) { @Tool(t.Of(Color.White)) }
+            <button class="tool eraser @(_tool == Eraser ? "chosen" : "")" title="Eraser: click a piece to remove it" @onclick="() => PickTool(Eraser)">
+                <svg viewBox="0 0 24 24"><path class="stroke" d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3" /></svg>
+            </button>
+        </div>
+    </section>
+
+    <aside class="side">
+        <div class="panel editor-panel">
+            <h1>Board editor</h1>
+            <p class="intro">
+                @if (_tool == Hand) { <span>Drag pieces to move them, or off the board to remove them. Pick a piece below or above the board to place it.</span> }
+                else if (_tool == Eraser) { <span>Click pieces to remove them.</span> }
+                else { <span>Click squares to place a <b>@PieceName(_tool)</b>. Click the piece in the bar again to go back to moving pieces.</span> }
+            </p>
+
+            <div class="field-label">Side to move</div>
+            <div class="segmented">
+                <button class="seg @(_side == Color.White ? "chosen" : "")" @onclick="() => SetSide(Color.White)">White</button>
+                <button class="seg @(_side == Color.Black ? "chosen" : "")" @onclick="() => SetSide(Color.Black)">Black</button>
+            </div>
+
+            <div class="field-label">Castling still allowed</div>
+            <div class="castling">
+                @Castle(CastlingRights.WhiteKingside, "White O-O")
+                @Castle(CastlingRights.WhiteQueenside, "White O-O-O")
+                @Castle(CastlingRights.BlackKingside, "Black O-O")
+                @Castle(CastlingRights.BlackQueenside, "Black O-O-O")
+            </div>
+
+            <div class="control-row edit-buttons">
+                <button class="btn" @onclick="StartPosition">Start position</button>
+                <button class="btn" @onclick="ClearBoard">Clear</button>
+                <button class="btn" @onclick="() => _orientation = _orientation.Opponent()" title="Flip board">
+                    <svg viewBox="0 0 24 24"><path d="M7 4v15M7 19l-3-3M7 19l3-3M17 20V5M17 5l-3 3M17 5l3 3" class="stroke" /></svg>
+                    Flip
+                </button>
+            </div>
+
+            <label class="field-label" for="editor-fen">FEN</label>
+            <input id="editor-fen" class="fen-input" spellcheck="false" autocomplete="off" value="@Fen" @onchange="OnFenTyped" />
+            @if (_fenTypedError is not null) { <div class="error">@_fenTypedError</div> }
+
+            <div class="validity @(Problem is null ? "ok" : "bad")">
+                @(Problem is null ? (Ended is { } end ? $"Legal position · {end}" : "Legal position · ready to play") : Problem)
+            </div>
+
+            <div class="control-row">
+                <button class="btn primary" disabled="@(Problem is not null || Ended is not null)" @onclick="PlayFromHere">Play from here</button>
+                <button class="btn" disabled="@(Problem is not null)" @onclick="Analyse" title="Open on the Play page to try moves for both sides">Analyse</button>
+            </div>
+            <div class="control-row" style="margin-top: 6px">
+                <button class="btn" @onclick="CopyFen">Copy FEN</button>
+            </div>
+        </div>
+    </aside>
+</main>
+
+<div class="flash @(_flash is null ? "" : "show")" role="status">@_flash</div>
+
+@code {
+    private const Piece Hand = Piece.None;
+    private static readonly Piece Eraser = (Piece)255;
+    private static readonly PieceType[] PaletteTypes = [PieceType.King, PieceType.Queen, PieceType.Rook, PieceType.Bishop, PieceType.Knight, PieceType.Pawn];
+
+    private readonly Piece[] _board = new Piece[64];
+    private readonly PieceTracker _tracker = new();
+    private Color _side = Color.White;
+    private CastlingRights _castling = CastlingRights.All;
+    private Color _orientation = Color.White;
+    private Piece _tool = Hand;
+    private string? _fenTypedError;
+    private string? _flash;
+
+    protected override void OnInitialized()
+    {
+        Load(State.EditorFen ?? Position.StartFen);
+    }
+
+    private RenderFragment Tool(Piece p) => __builder =>
+    {
+        <button class="tool @(_tool == p ? "chosen" : "")" title="@PieceName(p)" @onclick="() => PickTool(p)">
+            <span class="piece @ChessBoard.PieceClass(p)"></span>
+        </button>
+    };
+
+    private RenderFragment Castle(CastlingRights right, string label) => __builder =>
+    {
+        bool possible = CastlePossible(right);
+        <label class="check-row @(possible ? "" : "off")" title="@(possible ? null : "The king and rook aren't on their starting squares")">
+            <input type="checkbox" checked="@(possible && _castling.HasFlag(right))" disabled="@(!possible)"
+                   @onchange="e => ToggleCastle(right, e.Value is true)" />
+            @label
+        </label>
+    };
+
+    private static string PieceName(Piece p) =>
+        $"{(p.Color() == Color.White ? "white" : "black")} {p.Type().ToString().ToLowerInvariant()}";
+
+    private void PickTool(Piece p) => _tool = _tool == p ? Hand : p;
+
+    private bool CastlePossible(CastlingRights r) => r switch
+    {
+        CastlingRights.WhiteKingside => _board[Square.E1] == Piece.WhiteKing && _board[Square.H1] == Piece.WhiteRook,
+        CastlingRights.WhiteQueenside => _board[Square.E1] == Piece.WhiteKing && _board[Square.A1] == Piece.WhiteRook,
+        CastlingRights.BlackKingside => _board[Square.E8] == Piece.BlackKing && _board[Square.H8] == Piece.BlackRook,
+        _ => _board[Square.E8] == Piece.BlackKing && _board[Square.A8] == Piece.BlackRook,
+    };
+
+    private void ToggleCastle(CastlingRights r, bool on)
+    {
+        if (on) _castling |= r; else _castling &= ~r;
+        Changed();
+    }
+
+    private void SetSide(Color c)
+    {
+        _side = c;
+        Changed();
+    }
+
+    private void OnSquareUp((int From, int To, bool Dragged) e)
+    {
+        if (e.Dragged)
+        {
+            if (e.To == e.From) return;
+            var piece = _board[e.From];
+            _board[e.From] = Piece.None;
+            if (e.To >= 0) _board[e.To] = piece; // dropped off the board: removed
+        }
+        else if (_tool == Eraser)
+        {
+            _board[e.From] = Piece.None;
+        }
+        else if (_tool != Hand)
+        {
+            // Placing the same piece again removes it, so mistakes are easy to undo.
+            _board[e.From] = _board[e.From] == _tool ? Piece.None : _tool;
+        }
+        else return;
+        Changed(animate: !e.Dragged);
+    }
+
+    private void Changed(bool animate = false)
+    {
+        if (animate) _tracker.SyncTo(sq => _board[sq]);
+        else _tracker.Reset(sq => _board[sq]);
+        _fenTypedError = null;
+        State.EditorFen = Fen;
+    }
+
+    private void StartPosition() { Load(Position.StartFen); State.EditorFen = Fen; }
+
+    private void ClearBoard()
+    {
+        Array.Clear(_board);
+        _board[Square.E1] = Piece.WhiteKing;
+        _board[Square.E8] = Piece.BlackKing;
+        _castling = CastlingRights.None;
+        Changed(animate: true);
+    }
+
+    private void Load(string fen)
+    {
+        // Read the placement ourselves so even an impossible position (e.g. mid-edit) can be loaded.
+        var parts = fen.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        Array.Clear(_board);
+        int rank = 7, file = 0;
+        foreach (char ch in parts.Length > 0 ? parts[0] : "")
+        {
+            if (ch == '/') { rank--; file = 0; }
+            else if (char.IsDigit(ch)) file += ch - '0';
+            else if (rank >= 0 && file < 8)
+            {
+                var p = PieceExtensions.PieceFromFenChar(ch);
+                if (p != Piece.None) _board[rank * 8 + file] = p;
+                file++;
+            }
+        }
+        _side = parts.Length > 1 && parts[1] == "b" ? Color.Black : Color.White;
+        _castling = CastlingRights.None;
+        if (parts.Length > 2)
+            foreach (char ch in parts[2])
+                _castling |= ch switch
+                {
+                    'K' => CastlingRights.WhiteKingside, 'Q' => CastlingRights.WhiteQueenside,
+                    'k' => CastlingRights.BlackKingside, 'q' => CastlingRights.BlackQueenside, _ => CastlingRights.None,
+                };
+        _tracker.SyncTo(sq => _board[sq]);
+    }
+
+    private void OnFenTyped(ChangeEventArgs e)
+    {
+        var text = e.Value?.ToString() ?? "";
+        try
+        {
+            Position.FromFen(text.Trim());
+            Load(text);
+            _fenTypedError = null;
+            State.EditorFen = Fen;
+        }
+        catch (FormatException ex)
+        {
+            _fenTypedError = ex.Message;
+        }
+    }
+
+    /// <summary>The position as FEN (castling rights that aren't possible are left out).</summary>
+    private string Fen
+    {
+        get
+        {
+            var sb = new StringBuilder();
+            for (int r = 7; r >= 0; r--)
+            {
+                int empty = 0;
+                for (int f = 0; f < 8; f++)
+                {
+                    var p = _board[r * 8 + f];
+                    if (p == Piece.None) { empty++; continue; }
+                    if (empty > 0) { sb.Append(empty); empty = 0; }
+                    sb.Append(p.ToFenChar());
+                }
+                if (empty > 0) sb.Append(empty);
+                if (r > 0) sb.Append('/');
+            }
+            sb.Append(_side == Color.White ? " w " : " b ");
+            var c = new StringBuilder();
+            foreach (var (right, ch) in new[] { (CastlingRights.WhiteKingside, 'K'), (CastlingRights.WhiteQueenside, 'Q'), (CastlingRights.BlackKingside, 'k'), (CastlingRights.BlackQueenside, 'q') })
+                if (_castling.HasFlag(right) && CastlePossible(right)) c.Append(ch);
+            sb.Append(c.Length == 0 ? "-" : c.ToString()).Append(" - 0 1");
+            return sb.ToString();
+        }
+    }
+
+    /// <summary>Why the position can't be played (null = it's fine).</summary>
+    private string? Problem
+    {
+        get
+        {
+            try { Position.FromFen(Fen); return null; }
+            catch (FormatException e) { return e.Message; }
+        }
+    }
+
+    /// <summary>"checkmate" / "stalemate" etc. if the game would already be over.</summary>
+    private string? Ended
+    {
+        get
+        {
+            if (Problem is not null) return null;
+            var r = Position.FromFen(Fen).GetResult();
+            return r.IsOver ? r.ReasonText.ToLowerInvariant() : null;
+        }
+    }
+
+    private int CheckSquare
+    {
+        get
+        {
+            if (Problem is not null) return -1;
+            var p = Position.FromFen(Fen);
+            return p.IsInCheck ? p.KingSquare(p.SideToMove) : -1;
+        }
+    }
+
+    private void PlayFromHere()
+    {
+        State.PlayFromFen = Fen;
+        Nav.NavigateTo("./");
+    }
+
+    private void Analyse()
+    {
+        State.Review = new ReviewRequest(new RlChess.Engine.Game(Fen), "White", "Black", "Position from the editor");
+        Nav.NavigateTo("./");
+    }
+
+    private async Task CopyFen()
+    {
+        if (await Prefs.CopyText(Fen))
+        {
+            _flash = "FEN copied";
+            StateHasChanged();
+            await Task.Delay(1600);
+            _flash = null;
+        }
+    }
+}

@@ -1,0 +1,376 @@
+@page "/arena"
+@implements IDisposable
+@inject AppState State
+@inject Prefs Prefs
+@inject NavigationManager Nav
+
+<PageTitle>Arena · rlChess</PageTitle>
+
+<TopBar />
+
+<main class="arena">
+    @if (!S.Started)
+    {
+        <section class="panel arena-setup">
+            <h1>Arena</h1>
+            <p class="intro">Watch two computer players play a whole match on several boards at once, with a running score.
+                Colours swap every game, so neither side gets White more often.</p>
+
+            <div class="setup-players">
+                <div>
+                    <div class="field-label">Player 1</div>
+                    <PlayerPicker Choice="S.P1" ChoiceChanged="StateHasChanged" />
+                </div>
+                <div>
+                    <div class="field-label">Player 2</div>
+                    <PlayerPicker Choice="S.P2" ChoiceChanged="StateHasChanged" />
+                </div>
+            </div>
+
+            <div class="setup-grid">
+                <div>
+                    <div class="field-label">Games</div>
+                    <div class="chips-row">
+                        @foreach (var n in new[] { 10, 20, 50, 100, 500 })
+                        {
+                            <button class="chip small @(S.TotalGames == n ? "chosen" : "")" @onclick="() => S.TotalGames = n">@n</button>
+                        }
+                        <input class="num-input" type="number" min="1" max="100000" aria-label="Number of games" @bind="S.TotalGames" />
+                    </div>
+                </div>
+                <div>
+                    <div class="field-label">Boards at once</div>
+                    <div class="chips-row">
+                        @foreach (var n in new[] { 1, 4, 6, 9, 12, 16 })
+                        {
+                            <button class="chip small @(S.BoardCount == n ? "chosen" : "")" @onclick="() => S.BoardCount = n">@n</button>
+                        }
+                    </div>
+                </div>
+                <div>
+                    <div class="field-label">Speed</div>
+                    @SpeedPicker()
+                </div>
+                <div>
+                    <div class="field-label">Draw after <span class="hint">(moves each)</span></div>
+                    <input class="num-input" type="number" min="10" max="2000" aria-label="Move limit" value="@(S.MaxPlies / 2)"
+                           @onchange="e => { if (int.TryParse(e.Value?.ToString(), out var m)) S.MaxPlies = Math.Clamp(m, 10, 2000) * 2; }" />
+                </div>
+            </div>
+
+            <div class="field-label">Start position <span class="hint">(optional FEN; empty = normal start)</span></div>
+            <input class="fen-input @(_fenError is null ? "" : "invalid")" spellcheck="false" autocomplete="off" placeholder="Normal starting position"
+                   @bind="_fen" @bind:event="oninput" />
+            @if (_fenError is not null) { <div class="error">@_fenError</div> }
+
+            <p class="note">Each computer move may take up to <b>@Settings.ThinkLimitLabel(Prefs.ThinkLimit)</b>
+                (change it in settings ⚙); going over loses the game.</p>
+            <div class="modal-actions">
+                <button class="btn primary" @onclick="Start">Start the match</button>
+            </div>
+        </section>
+    }
+    else
+    {
+        <section class="arena-boards" style="--cols: @Columns; --rows: @Rows">
+            @foreach (var b in S.Boards)
+            {
+                <button class="arena-card @(b.Game.IsOver ? "over" : "") @(b.Active ? "" : "idle")" @onclick="() => _watching = b.Slot"
+                        title="Watch this board bigger">
+                    @NameLine(b, Color.Black)
+                    <MiniBoard Pieces="b.Tracker.Pieces" LastMove="LastMove(b.Game)" CheckSquare="Check(b.Game)" Animate="SmoothMoves" />
+                    @NameLine(b, Color.White)
+                    <span class="card-status">
+                        @if (b.Number == 0) { <span>waiting</span> }
+                        else if (b.Game.IsOver) { <b>@b.Game.Result.ToPgnString()</b> <span>@b.Game.Result.ReasonText</span> }
+                        else { <span>Game @b.Number · move @(b.Game.Moves.Count / 2 + 1)</span> }
+                    </span>
+                </button>
+            }
+        </section>
+
+        <aside class="arena-side">
+            <div class="panel score-panel">
+                <div class="vs"><b>@S.P1Label</b> <span>vs</span> <b>@S.P2Label</b></div>
+                <div class="tiles">
+                    <div class="tile"><div class="k">P1 wins</div><div class="v">@S.Stats.Wins</div></div>
+                    <div class="tile"><div class="k">Draws</div><div class="v">@S.Stats.Draws</div></div>
+                    <div class="tile"><div class="k">P2 wins</div><div class="v">@S.Stats.Losses</div></div>
+                </div>
+                <div class="score-bar" title="P1 wins · draws · P2 wins">
+                    @if (S.Stats.Games > 0)
+                    {
+                        <i class="p1" style="flex: @S.Stats.Wins"></i><i class="d" style="flex: @S.Stats.Draws"></i><i class="p2" style="flex: @S.Stats.Losses"></i>
+                    }
+                </div>
+                <div class="elo-line">
+                    <span>Rating difference for P1</span>
+                    <b>@S.Stats.EloText()</b>
+                </div>
+                <div class="progress-line">
+                    <span>@S.Results.Count of @S.Total games @(S.Finished ? "· finished" : S.Paused ? "· paused" : "")</span>
+                    <span>@FormatElapsed(S.Elapsed)</span>
+                </div>
+                <div class="progress"><i style="width: @ProgressPct%"></i></div>
+                @if (S.Error is not null)
+                {
+                    <div class="error arena-error">Stopped: @S.Error</div>
+                }
+                @if (_autoPaused && S.Paused)
+                {
+                    <div class="note">Paused while you were on another page.</div>
+                }
+            </div>
+
+            <div class="panel controls">
+                @if (!S.Finished && S.Error is null)
+                {
+                    <div class="control-row">
+                        <button class="btn" @onclick="TogglePause">
+                            @if (S.Paused)
+                            {
+                                <svg viewBox="0 0 24 24"><path d="M8 5l11 7-11 7z" /></svg><span>Resume</span>
+                            }
+                            else
+                            {
+                                <svg viewBox="0 0 24 24"><path d="M7 5h3.5v14H7zM13.5 5H17v14h-3.5z" /></svg><span>Pause</span>
+                            }
+                        </button>
+                        <button class="btn" @onclick="StopMatch" title="End the match now and keep the results">
+                            <svg viewBox="0 0 24 24"><path d="M6 6h12v12H6z" /></svg><span>Stop</span>
+                        </button>
+                    </div>
+                    @SpeedPicker()
+                }
+                else
+                {
+                    <div class="control-row">
+                        <button class="btn primary" @onclick="Again">Play again</button>
+                        <button class="btn" @onclick="NewMatch">New match</button>
+                    </div>
+                }
+                <div class="control-row">
+                    <button class="btn" disabled="@(S.Results.Count == 0)" @onclick="DownloadPgn" title="All finished games as a PGN file">Games (PGN)</button>
+                    <button class="btn" disabled="@(S.Results.Count == 0)" @onclick="DownloadCsv" title="Every position, the move played and the final result: data for training an AI">Training data</button>
+                </div>
+            </div>
+
+            <div class="panel chart-panel">
+                <div class="panel-title">P1's score so far</div>
+                @((MarkupString)S.Stats.ScoreChartSvg(340, 170))
+                <p class="note">Above the dashed line = P1 is doing better. The shaded band shows how sure we can be: it shrinks as more games finish.</p>
+            </div>
+
+            <div class="panel results-panel">
+                <div class="panel-title">Finished games</div>
+                @if (S.Results.Count == 0)
+                {
+                    <div class="note empty">None yet.</div>
+                }
+                else
+                {
+                    <div class="results-list">
+                        @foreach (var r in S.Results.AsEnumerable().Reverse().Take(_showAll ? int.MaxValue : 30))
+                        {
+                            double sc = MatchStats.ScoreFor(r.Game.Result, r.P1White);
+                            <button class="result-row" @onclick="() => Review(r)" title="Open this game to look through it">
+                                <span class="rn">#@r.Number</span>
+                                <span class="rp">@(r.P1White ? "P1" : "P2") – @(r.P1White ? "P2" : "P1")</span>
+                                <span class="rr @(sc >= 1 ? "w" : sc <= 0 ? "l" : "")">@r.Game.Result.ToPgnString()</span>
+                                <span class="rw">@r.Game.Result.ReasonText</span>
+                                <span class="rm">@((r.Game.Moves.Count + 1) / 2)</span>
+                            </button>
+                        }
+                    </div>
+                    @if (!_showAll && S.Results.Count > 30)
+                    {
+                        <button class="text-btn show-all" @onclick="() => _showAll = true">Show all @S.Results.Count</button>
+                    }
+                }
+            </div>
+        </aside>
+
+        @if (_watching is int slot && slot < S.Boards.Count)
+        {
+            var b = S.Boards[slot];
+            <div class="modal-backdrop" @onclick="() => _watching = null">
+                <div class="modal watch" @onclick:stopPropagation="true" role="dialog" aria-label="Watching a board">
+                    <div class="watch-head">
+                        <span>Board @(slot + 1) · Game @b.Number</span>
+                        <button class="icon-btn" title="Close" @onclick="() => _watching = null">
+                            <svg viewBox="0 0 24 24"><path class="stroke" d="M6 6l12 12M18 6L6 18" /></svg>
+                        </button>
+                    </div>
+                    @NameLine(b, Color.Black)
+                    <MiniBoard Pieces="b.Tracker.Pieces" LastMove="LastMove(b.Game)" CheckSquare="Check(b.Game)" Animate="SmoothMoves" />
+                    @NameLine(b, Color.White)
+                    <div class="watch-moves">@RecentMoves(b.Game)</div>
+                    <div class="watch-foot">
+                        @if (b.Game.IsOver) { <b>@b.Game.Result.ToPgnString() · @b.Game.Result.ReasonText</b> }
+                        else { <span>Live · move @(b.Game.Moves.Count / 2 + 1)</span> }
+                    </div>
+                </div>
+            </div>
+        }
+    }
+</main>
+
+@code {
+    private ArenaSession S => State.Arena;
+    private string _fen = "";
+    private string? _fenError;
+    private int? _watching;
+    private bool _showAll;
+    private bool _autoPaused;
+    private int _seenVersion = -1;
+    private PeriodicTimer? _timer;
+    private bool _disposed;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _fen = S.StartFen ?? "";
+        _autoPaused = S.Paused && S.PausedByLeaving;
+        await Prefs.LoadAsync();
+        if (!S.Started) LoadSetup(await Prefs.Get("arena"));
+        _ = Refresh();
+    }
+
+    private async Task Refresh()
+    {
+        _timer = new PeriodicTimer(TimeSpan.FromMilliseconds(100));
+        try
+        {
+            while (!_disposed && await _timer.WaitForNextTickAsync())
+            {
+                if (S.Version == _seenVersion) continue;
+                _seenVersion = S.Version;
+                StateHasChanged();
+            }
+        }
+        catch (ObjectDisposedException) { }
+    }
+
+    private int Columns => S.Boards.Count switch { <= 1 => 1, <= 4 => 2, <= 9 => 3, _ => 4 };
+    private int Rows => (S.Boards.Count + Columns - 1) / Math.Max(1, Columns);
+    private bool SmoothMoves => S.Speed is "slow" or "normal";
+    private double ProgressPct => S.Total == 0 ? 0 : 100.0 * S.Results.Count / S.Total;
+
+    private RenderFragment SpeedPicker() => __builder =>
+    {
+        <div class="speed" role="radiogroup" aria-label="Speed">
+            @foreach (var (key, label) in new[] { ("slow", "Slow"), ("normal", "Normal"), ("fast", "Fast"), ("max", "Max") })
+            {
+                <button class="seg small @(S.Speed == key ? "chosen" : "")" role="radio" aria-checked="@(S.Speed == key)"
+                        title="@(key == "max" ? "As fast as the players can go" : null)" @onclick="() => SetSpeed(key)">@label</button>
+            }
+        </div>
+    };
+
+    private RenderFragment NameLine(ArenaBoard b, Color side) => __builder =>
+    {
+        bool p1 = (side == Color.White) == b.P1White;
+        bool toMove = b.Active && !b.Game.IsOver && b.Game.SideToMove == side;
+        <span class="card-name @(toMove ? "to-move" : "")">
+            <span class="side-dot @(side == Color.White ? "white" : "black")"></span>
+            <span class="who">@(p1 ? S.P1Label : S.P2Label)</span>
+            <span class="tag">@(p1 ? "P1" : "P2")</span>
+        </span>
+    };
+
+    private static Move? LastMove(RlChess.Engine.Game g) => g.Moves.Count > 0 ? g.Moves[^1] : null;
+    private static int Check(RlChess.Engine.Game g) => g.Position.IsInCheck ? g.Position.KingSquare(g.SideToMove) : -1;
+
+    private static string RecentMoves(RlChess.Engine.Game g)
+    {
+        int from = Math.Max(0, g.SanMoves.Count - 12);
+        if (from % 2 == 1) from--;
+        var parts = new List<string>();
+        for (int i = from; i < g.SanMoves.Count; i++)
+            parts.Add(i % 2 == 0 ? $"{i / 2 + 1}. {g.SanMoves[i]}" : g.SanMoves[i]);
+        return (from > 0 ? "… " : "") + string.Join(" ", parts);
+    }
+
+    private static string FormatElapsed(TimeSpan t) => t.TotalHours >= 1 ? $"{(int)t.TotalHours}:{t.Minutes:00}:{t.Seconds:00}" : $"{(int)t.TotalMinutes}:{t.Seconds:00}";
+
+    private async Task Start()
+    {
+        _fenError = null;
+        string? fen = null;
+        if (!string.IsNullOrWhiteSpace(_fen))
+        {
+            try
+            {
+                var p = Position.FromFen(_fen.Trim());
+                if (p.GetResult().IsOver) { _fenError = "The game is already over in that position."; return; }
+                fen = p.ToFen();
+            }
+            catch (FormatException e) { _fenError = e.Message; return; }
+        }
+        S.StartFen = fen;
+        S.TotalGames = Math.Clamp(S.TotalGames, 1, 100000);
+        S.ThinkLimit = Prefs.ThinkLimit;
+        await Prefs.Set("arena", SaveSetup());
+        _showAll = false;
+        _autoPaused = false;
+        S.Start();
+    }
+
+    private void SetSpeed(string key) => S.Speed = key;
+
+    private void TogglePause()
+    {
+        _autoPaused = false;
+        if (S.Paused) S.Resume(); else S.Pause();
+    }
+
+    private void StopMatch() => S.Stop();
+
+    private Task Again() => Start();
+
+    private void NewMatch()
+    {
+        S.Reset();
+        _watching = null;
+    }
+
+    private void Review(ArenaResult r)
+    {
+        State.Review = new ReviewRequest(r.Game, r.White, r.Black, $"Arena game {r.Number}");
+        Nav.NavigateTo("./");
+    }
+
+    private Task DownloadPgn() => Prefs.Download($"rlchess-arena-{DateTime.Now:yyyy-MM-dd-HHmm}.pgn", S.ToPgn());
+
+    private Task DownloadCsv() => Prefs.Download($"rlchess-arena-{DateTime.Now:yyyy-MM-dd-HHmm}.csv", S.ToCsv(), "text/csv");
+
+    private string SaveSetup() => string.Join(';', $"p1={S.P1}", $"p2={S.P2}", $"games={S.TotalGames}", $"boards={S.BoardCount}",
+        $"speed={S.Speed}", $"plies={S.MaxPlies}");
+
+    private void LoadSetup(string? text)
+    {
+        if (string.IsNullOrEmpty(text)) return;
+        foreach (var part in text.Split(';'))
+        {
+            var kv = part.Split('=', 2);
+            if (kv.Length != 2) continue;
+            switch (kv[0])
+            {
+                case "p1": S.P1 = BotChoice.Parse(kv[1]); break;
+                case "p2": S.P2 = BotChoice.Parse(kv[1]); break;
+                case "games" when int.TryParse(kv[1], out var g): S.TotalGames = Math.Clamp(g, 1, 100000); break;
+                case "boards" when int.TryParse(kv[1], out var b): S.BoardCount = Math.Clamp(b, 1, 16); break;
+                case "speed" when kv[1] is "slow" or "normal" or "fast" or "max": S.Speed = kv[1]; break;
+                case "plies" when int.TryParse(kv[1], out var p): S.MaxPlies = Math.Clamp(p, 20, 4000); break;
+            }
+        }
+    }
+
+    public void Dispose()
+    {
+        _disposed = true;
+        _timer?.Dispose();
+        // Don't keep playing in the background (it would slow down the other pages).
+        S.PausedByLeaving = S.Running;
+        if (S.Running) S.Pause();
+    }
+}

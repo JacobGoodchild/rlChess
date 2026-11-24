@@ -1,0 +1,40 @@
+@* A small, view-only board (no mouse handling), used for the Arena's many boards and game previews. *@
+<div class="board mini-board @(Animate ? "animate" : "")">
+    @if (LastMove is Move lm && !lm.IsNone)
+    {
+        <div class="hl last-move" style="@Pos(lm.From)"></div>
+        <div class="hl last-move" style="@Pos(lm.To)"></div>
+    }
+    @if (CheckSquare >= 0)
+    {
+        <div class="hl check" style="@Pos(CheckSquare)"></div>
+    }
+    @foreach (var p in Pieces)
+    {
+        <div @key="p.Id" class="piece @ChessBoard.PieceClass(p.Piece)" style="@Pos(p.Square)"></div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<PieceTracker.TrackedPiece> Pieces { get; set; } = [];
+    [Parameter] public Move? LastMove { get; set; }
+    [Parameter] public int CheckSquare { get; set; } = -1;
+    [Parameter] public bool Animate { get; set; }
+    [Parameter] public Color Orientation { get; set; } = Color.White;
+
+    private string Pos(int sq)
+    {
+        int file = Square.File(sq), rank = Square.Rank(sq);
+        int x = Orientation == Color.White ? file : 7 - file;
+        int y = Orientation == Color.White ? 7 - rank : rank;
+        return $"transform: translate({x * 100}%, {y * 100}%)";
+    }
+
+    /// <summary>The pieces of a position, for a board that doesn't animate.</summary>
+    public static IReadOnlyList<PieceTracker.TrackedPiece> PiecesOf(Position position)
+    {
+        var t = new PieceTracker();
+        t.Reset(position);
+        return t.Pieces;
+    }
+}

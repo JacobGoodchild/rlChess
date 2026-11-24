@@ -87,13 +87,24 @@ export function attachBoard(boardEl, dotnet) {
         const sq = squareAt(e.clientX, e.clientY);
         if (sq < 0) return;
         e.preventDefault();
+        hoverSq = -2; // the press replaces any hover hint; report again after it
         const pieceEl = boardEl.querySelector(`.piece[data-sq="${sq}"]`);
         press = { sq, x: e.clientX, y: e.clientY, pieceEl, ghost: null, dragging: false, pointerId: e.pointerId };
         boardEl.setPointerCapture?.(e.pointerId);
         dotnet.invokeMethodAsync("OnSquareDown", sq);
     };
 
+    // Hover hints (mouse only): report the square under the pointer when it changes.
+    let hoverSq = -1;
+    const setHover = (sq) => {
+        if (sq === hoverSq) return;
+        hoverSq = sq;
+        dotnet.invokeMethodAsync("OnHover", sq);
+    };
+    const onLeave = () => { if (!press) setHover(-1); };
+
     const onMove = (e) => {
+        if (!press && e.pointerType === "mouse") { setHover(squareAt(e.clientX, e.clientY)); return; }
         if (!press || e.pointerId !== press.pointerId) return;
         if (!press.dragging) {
             const canDrag = press.pieceEl && press.pieceEl.classList.contains("mine");
@@ -145,6 +156,7 @@ export function attachBoard(boardEl, dotnet) {
     boardEl.addEventListener("pointerup", onUp);
     boardEl.addEventListener("pointercancel", onCancel);
     boardEl.addEventListener("contextmenu", onContext);
+    boardEl.addEventListener("pointerleave", onLeave);
 
     return {
         clearShapes,
@@ -156,6 +168,7 @@ export function attachBoard(boardEl, dotnet) {
             boardEl.removeEventListener("pointerup", onUp);
             boardEl.removeEventListener("pointercancel", onCancel);
             boardEl.removeEventListener("contextmenu", onContext);
+            boardEl.removeEventListener("pointerleave", onLeave);
         }
     };
 }
@@ -163,7 +176,7 @@ export function attachBoard(boardEl, dotnet) {
 // ---------------------------------------------------------------- sounds
 
 const sounds = {};
-export function playSound(name) {
+export function playSound(name, volume = 0.8) {
     try {
         let a = sounds[name];
         if (!a) {
@@ -171,7 +184,7 @@ export function playSound(name) {
             a.preload = "auto";
         }
         const clip = a.paused ? a : a.cloneNode();
-        clip.volume = 0.8;
+        clip.volume = Math.max(0, Math.min(1, volume));
         clip.currentTime = 0;
         clip.play().catch(() => { /* browsers block audio until the first tap; ignore */ });
     } catch { }
@@ -204,8 +217,8 @@ export async function copyText(text) {
     }
 }
 
-export function downloadText(filename, text) {
-    const url = URL.createObjectURL(new Blob([text], { type: "application/x-chess-pgn" }));
+export function downloadText(filename, text, type = "application/x-chess-pgn") {
+    const url = URL.createObjectURL(new Blob([text], { type }));
     const a = document.createElement("a");
     a.href = url;
     a.download = filename;

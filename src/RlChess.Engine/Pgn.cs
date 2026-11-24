@@ -69,16 +69,30 @@ public static partial class Pgn
         resultToken ??= tags.GetValueOrDefault("Result");
         if (!game.IsOver && resultToken is "1-0" or "0-1" or "1/2-1/2")
         {
-            var reason = tags.GetValueOrDefault("Termination", "")
-                .Contains("move limit", StringComparison.OrdinalIgnoreCase) ? GameEndReason.MoveLimit : GameEndReason.Resignation;
+            var reason = ReasonFromTermination(tags.GetValueOrDefault("Termination", ""), draw: resultToken == "1/2-1/2");
             game.End(resultToken switch
             {
                 "1-0" => GameResult.Win(Color.White, reason),
                 "0-1" => GameResult.Win(Color.Black, reason),
-                _ => GameResult.Draw(reason == GameEndReason.MoveLimit ? reason : GameEndReason.None),
+                _ => GameResult.Draw(reason),
             });
         }
         return game;
+    }
+
+    /// <summary>
+    /// Why a game ended early, from its Termination tag: our own texts (e.g. "Time out", "Draw agreed")
+    /// and lichess's "Time forfeit". Otherwise resignation (decisive) or agreement (draw).
+    /// </summary>
+    private static GameEndReason ReasonFromTermination(string termination, bool draw)
+    {
+        termination = termination.Trim();
+        foreach (var r in Enum.GetValues<GameEndReason>())
+            if (r != GameEndReason.None && string.Equals(GameResult.Draw(r).ReasonText, termination, StringComparison.OrdinalIgnoreCase))
+                return r;
+        if (termination.Contains("move limit", StringComparison.OrdinalIgnoreCase)) return GameEndReason.MoveLimit;
+        if (termination.Contains("time forfeit", StringComparison.OrdinalIgnoreCase)) return GameEndReason.Timeout;
+        return draw ? GameEndReason.Agreement : GameEndReason.Resignation;
     }
 
     /// <summary>Cuts a ";" comment (runs to the end of the line), ignoring ";" inside {braces}.</summary>

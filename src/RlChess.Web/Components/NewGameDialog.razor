@@ -3,6 +3,13 @@
 <div class="modal-backdrop" @onclick="Cancel">
     <div class="modal" @onclick:stopPropagation="true" role="dialog" aria-label="New game">
         <h2>New game</h2>
+        @if (StartFen is not null)
+        {
+            <div class="start-from">
+                <span>Starting from your set-up position</span>
+                <button type="button" class="text-btn" @onclick="ClearFen">Use the normal start</button>
+            </div>
+        }
 
         <div class="segmented" role="tablist">
             @Tab(GameMode.VsComputer, "vs Computer")
@@ -65,6 +72,9 @@
     [Parameter, EditorRequired] public GameSetup Setup { get; set; } = new();
     [Parameter] public EventCallback<GameSetup> OnPlay { get; set; }
     [Parameter] public EventCallback OnCancel { get; set; }
+    /// <summary>A custom start position (e.g. from the board editor), or null for the normal start.</summary>
+    [Parameter] public string? StartFen { get; set; }
+    [Parameter] public EventCallback StartFenCleared { get; set; }
 
     private GameSetup _s = new();
 
@@ -77,6 +87,8 @@
             else { <span class="long">@label</span><span class="short">@shortLabel</span> }
         </button>
     };
+
+    private Task ClearFen() => StartFenCleared.InvokeAsync();
 
     private Task Play() => OnPlay.InvokeAsync(_s);
     private Task Cancel() => OnCancel.InvokeAsync();

@@ -1,0 +1,176 @@
+@page "/games"
+@inject GameHistory History
+@inject AppState State
+@inject Prefs Prefs
+@inject NavigationManager Nav
+
+<PageTitle>Your games · rlChess</PageTitle>
+
+<TopBar />
+
+<main class="games-page">
+    <div class="page-head">
+        <div>
+            <h1>Your games</h1>
+            <p class="intro">Games you play are saved here automatically, in this browser only (the newest @GameHistory.MaxGames).</p>
+        </div>
+        @if (_games is { Count: > 0 })
+        {
+            <div class="head-actions">
+                <button class="btn" @onclick="DownloadAll" title="Every saved game in one PGN file">Download all</button>
+                @if (_confirmClear)
+                {
+                    <button class="btn danger-btn" @onclick="ClearAll">Delete all @_games.Count?</button>
+                    <button class="btn" @onclick="() => _confirmClear = false">Keep</button>
+                }
+                else
+                {
+                    <button class="btn" @onclick="() => _confirmClear = true">Clear</button>
+                }
+            </div>
+        }
+    </div>
+
+    @if (_games is null)
+    {
+        <p class="note">Loading…</p>
+    }
+    else if (_games.Count == 0)
+    {
+        <div class="panel empty-state">
+            <p>No games yet. Play one and it will appear here when it ends.</p>
+            <a class="btn primary" href="./">Play a game</a>
+        </div>
+    }
+    else
+    {
+        <div class="filter-row">
+            @foreach (var (key, label) in new[] { ("all", "All"), ("won", "Won"), ("lost", "Lost"), ("drawn", "Drawn"), ("unfinished", "Unfinished") })
+            {
+                <button class="chip small @(_filter == key ? "chosen" : "")" @onclick="() => _filter = key">@label</button>
+            }
+        </div>
+        <div class="game-cards">
+            @foreach (var g in Filtered)
+            {
+                <div class="panel game-card">
+                    <button class="game-open" @onclick="() => Open(g)" title="Open this game">
+                        <MiniBoard Pieces="MiniBoard.PiecesOf(g.Game.Position)" LastMove="(g.Game.Moves.Count > 0 ? g.Game.Moves[^1] : null)" />
+                    </button>
+                    <div class="game-info">
+                        <div class="game-players">
+                            <span><span class="side-dot white"></span> @g.White</span>
+                            <span><span class="side-dot black"></span> @g.Black</span>
+                        </div>
+                        <div class="game-result @OutcomeClass(g)">@ResultText(g)</div>
+                        <div class="game-meta">@g.Mode · @((g.Game.Moves.Count + 1) / 2) moves · @When(g.When)</div>
+                        <div class="game-actions">
+                            <button class="text-btn" @onclick="() => Open(g)">Open</button>
+                            <button class="text-btn" @onclick="() => Copy(g)">Copy PGN</button>
+                            <button class="text-btn danger" @onclick="() => Remove(g)">Delete</button>
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+        @if (!Filtered.Any())
+        {
+            <p class="note">No games match.</p>
+        }
+    }
+</main>
+
+<div class="flash @(_flash is null ? "" : "show")" role="status">@_flash</div>
+
+@code {
+    private List<SavedGame>? _games;
+    private string _filter = "all";
+    private bool _confirmClear;
+    private string? _flash;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        _games = (await History.All()).ToList();
+        StateHasChanged();
+    }
+
+    /// <summary>"you won" etc. needs to know which side was the person: the side not named after a computer.</summary>
+    private static int PersonScore(SavedGame g)
+    {
+        var r = g.Game.Result;
+        if (!r.IsOver || r.Outcome == GameOutcome.Draw) return 0;
+        bool whiteWon = r.Outcome == GameOutcome.WhiteWins;
+        if (g.White == "You") return whiteWon ? 1 : -1;
+        if (g.Black == "You") return whiteWon ? -1 : 1;
+        return 0;
+    }
+
+    private IEnumerable<SavedGame> Filtered => _filter switch
+    {
+        "won" => _games!.Where(g => PersonScore(g) > 0),
+        "lost" => _games!.Where(g => PersonScore(g) < 0),
+        "drawn" => _games!.Where(g => g.Game.Result.Outcome == GameOutcome.Draw),
+        "unfinished" => _games!.Where(g => !g.Finished),
+        _ => _games!,
+    };
+
+    private static string OutcomeClass(SavedGame g) => PersonScore(g) switch { > 0 => "won", < 0 => "lost", _ => "" };
+
+    private static string ResultText(SavedGame g)
+    {
+        var r = g.Game.Result;
+        if (!r.IsOver) return "Unfinished";
+        string who = r.Outcome switch
+        {
+            GameOutcome.WhiteWins => PersonScore(g) > 0 ? "You won" : PersonScore(g) < 0 ? "You lost" : $"{g.White} won",
+            GameOutcome.BlackWins => PersonScore(g) > 0 ? "You won" : PersonScore(g) < 0 ? "You lost" : $"{g.Black} won",
+            _ => "Draw",
+        };
+        return $"{who} · {r.ReasonText.ToLowerInvariant()} · {r.ToPgnString()}";
+    }
+
+    private static string When(DateTime d)
+    {
+        if (d == DateTime.MinValue) return "";
+        var today = DateTime.Now.Date;
+        if (d.Date == today) return $"today {d:HH:mm}";
+        if (d.Date == today.AddDays(-1)) return $"yesterday {d:HH:mm}";
+        return d.Year == today.Year ? d.ToString("d MMM, HH:mm") : d.ToString("d MMM yyyy");
+    }
+
+    private void Open(SavedGame g)
+    {
+        State.Review = new ReviewRequest(g.Game, g.White, g.Black, $"Saved game · {When(g.When)}");
+        Nav.NavigateTo("./");
+    }
+
+    private async Task Copy(SavedGame g)
+    {
+        if (await Prefs.CopyText(g.Pgn)) await Flash("PGN copied");
+    }
+
+    private async Task Remove(SavedGame g)
+    {
+        await History.Remove(g.Id);
+        _games!.Remove(g);
+    }
+
+    private async Task ClearAll()
+    {
+        await History.Clear();
+        _games!.Clear();
+        _confirmClear = false;
+    }
+
+    private async Task DownloadAll() =>
+        await Prefs.Download($"rlchess-games-{DateTime.Now:yyyy-MM-dd}.pgn", await History.ExportPgn());
+
+    private async Task Flash(string text)
+    {
+        _flash = text;
+        StateHasChanged();
+        await Task.Delay(1600);
+        if (_flash == text) { _flash = null; StateHasChanged(); }
+    }
+}
