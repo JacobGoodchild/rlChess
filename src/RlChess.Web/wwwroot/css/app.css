@@ -554,3 +554,11 @@ svg .stroke { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap:
 .loading .bar { width: 160px; height: 3px; background: var(--line); border-radius: 2px; overflow: hidden; }
 .loading .bar i { display: block; height: 100%; width: var(--blazor-load-percentage, 0%); background: var(--accent); transition: width .2s; }
 @keyframes bob { 50% { transform: translateY(-6px) rotate(-4deg); } }
+
+/* Right-click arrows and circles */
+.board > .shapes { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 4; pointer-events: none; opacity: .8; }
+.shapes .green { stroke: #15781b; fill: #15781b; }
+.shapes .red { stroke: #882020; fill: #882020; }
+.shapes .blue { stroke: #003088; fill: #003088; }
+.shapes marker path { stroke: none; }
+.shapes circle { fill: none !important; }

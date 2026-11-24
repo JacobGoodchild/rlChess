@@ -85,6 +85,8 @@
     [Parameter] public int PromotionSquare { get; set; } = -1;
     [Parameter] public Color PromotionColor { get; set; }
     [Parameter] public EventCallback<PieceType> OnPromotion { get; set; }
+    /// <summary>Changes whenever a different position is shown; right-click arrows are cleared then.</summary>
+    [Parameter] public int PositionKey { get; set; }
     [Parameter] public EventCallback<int> OnSquareDownCallback { get; set; }
     [Parameter] public EventCallback<(int From, int To, bool Dragged)> OnSquareUpCallback { get; set; }
 
@@ -105,9 +107,22 @@
     public static string PieceClass(Piece p) =>
         (p.Color() == Color.White ? "w" : "b") + p.Type().ToLetter();
 
+    private int _lastPositionKey;
+    private Color _lastOrientation = Color.White;
+
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (!firstRender) return;
+        if (!firstRender)
+        {
+            if (_handle is null) return;
+            if (PositionKey != _lastPositionKey) await _handle.InvokeVoidAsync("clearShapes");
+            else if (Orientation != _lastOrientation) await _handle.InvokeVoidAsync("redraw");
+            _lastPositionKey = PositionKey;
+            _lastOrientation = Orientation;
+            return;
+        }
+        _lastPositionKey = PositionKey;
+        _lastOrientation = Orientation;
         _module = await JS.InvokeAsync<IJSObjectReference>("import", "./js/board.js");
         _self = DotNetObjectReference.Create(this);
         _handle = await _module.InvokeAsync<IJSObjectReference>("attachBoard", _boardEl, _self);

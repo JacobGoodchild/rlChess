@@ -23,6 +23,47 @@ public sealed class PieceTracker
             if (position[sq] != Piece.None) _pieces.Add(new TrackedPiece(_nextId++, position[sq], sq));
     }
 
+    /// <summary>
+    /// Moves the tracked pieces to match <paramref name="position"/>, keeping ids where it can so
+    /// pieces slide to their new squares (used for undo and jumping around the move list).
+    /// Pieces that stay put keep their id; others are matched to the nearest same piece.
+    /// </summary>
+    public void SyncTo(Position position)
+    {
+        var unmatchedOld = new List<TrackedPiece>();
+        var result = new List<TrackedPiece>();
+        var filled = new bool[64];
+        foreach (var p in _pieces)
+        {
+            if (position[p.Square] == p.Piece) { result.Add(p); filled[p.Square] = true; }
+            else unmatchedOld.Add(p);
+        }
+        for (int sq = 0; sq < 64; sq++)
+        {
+            var piece = position[sq];
+            if (piece == Piece.None || filled[sq]) continue;
+            TrackedPiece? best = null;
+            int bestDist = int.MaxValue;
+            foreach (var o in unmatchedOld)
+            {
+                if (o.Piece != piece) continue;
+                int d = Math.Abs(Square.File(o.Square) - Square.File(sq)) + Math.Abs(Square.Rank(o.Square) - Square.Rank(sq));
+                if (d < bestDist) { bestDist = d; best = o; }
+            }
+            if (best is not null)
+            {
+                unmatchedOld.Remove(best);
+                result.Add(best with { Square = sq });
+            }
+            else
+            {
+                result.Add(new TrackedPiece(_nextId++, piece, sq));
+            }
+        }
+        _pieces.Clear();
+        _pieces.AddRange(result);
+    }
+
     /// <summary>Updates the pieces for <paramref name="move"/> played in <paramref name="before"/>.</summary>
     public void Apply(Position before, Move move)
     {

@@ -98,6 +98,7 @@ public partial class Home : IAsyncDisposable
         _orientation = VsComputer ? _humanColor : Color.White;
         ClearSelection();
         _pendingPromotion = null;
+        _tracker.Reset(_game.Position);
         GoToPly(_game.Moves.Count, animate: false, sound: false);
         _ = MaybeComputerMove();
     }
@@ -172,7 +173,7 @@ public partial class Home : IAsyncDisposable
         while (VsComputer && _game.Moves.Count > 0 && _game.SideToMove != _humanColor);
 
         _pendingPromotion = null;
-        GoToPly(_game.Moves.Count, animate: false, sound: false);
+        GoToPly(_game.Moves.Count, animate: true, sound: false);
         _ = MaybeComputerMove(); // e.g. human plays black and undid everything
     }
 
@@ -206,8 +207,9 @@ public partial class Home : IAsyncDisposable
         }
         else
         {
-            _tracker.Reset(target);
-            _animate = false;
+            // Slide pieces to where they belong (backwards steps, jumps, undo).
+            _tracker.SyncTo(target);
+            _animate = animate;
         }
         _viewPly = ply;
         _shown = target;

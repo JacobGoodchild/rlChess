@@ -39,6 +39,7 @@
                         Dests="_dests"
                         MovableColor="MovableColor"
                         Animate="_animate"
+                        PositionKey="@HashCode.Combine(_generation, _game.Moves.Count, _viewPly)"
                         PromotionSquare="@(_pendingPromotion?.To ?? -1)"
                         PromotionColor="_game.SideToMove"
                         OnPromotion="OnPromotion"

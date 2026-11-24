@@ -38,8 +38,50 @@ export function attachBoard(boardEl, dotnet) {
         g.style.transform = `translate(${e.clientX - size / 2}px, ${e.clientY - size / 2}px)`;
     };
 
+    // ---- right-click annotations: drag for an arrow, click for a circle (Shift = red, Alt = blue)
+    const shapes = new Map(); // key -> {from, to, color}
+    let rightFrom = -1;
+    const svgNs = "http://www.w3.org/2000/svg";
+    const layer = document.createElementNS(svgNs, "svg");
+    layer.setAttribute("class", "shapes");
+    layer.setAttribute("viewBox", "0 0 8 8");
+    layer.innerHTML = `<defs>${["green", "red", "blue"].map(c =>
+        `<marker id="ah-${c}" orient="auto" markerWidth="4" markerHeight="4" refX="2.05" refY="2"><path d="M0,0 V4 L3,2 Z" class="${c}"/></marker>`).join("")}</defs><g></g>`;
+    boardEl.appendChild(layer);
+    const group = layer.querySelector("g");
+
+    const centre = (sq) => {
+        const flipped = boardEl.dataset.orientation === "black";
+        const f = sq % 8, r = Math.floor(sq / 8);
+        return [(flipped ? 7 - f : f) + 0.5, (flipped ? r : 7 - r) + 0.5];
+    };
+
+    const drawShapes = () => {
+        let html = "";
+        for (const s of shapes.values()) {
+            const [x1, y1] = centre(s.from);
+            if (s.from === s.to) {
+                html += `<circle cx="${x1}" cy="${y1}" r="0.46" class="${s.color}" fill="none" stroke-width="0.07"/>`;
+            } else {
+                const [x2, y2] = centre(s.to);
+                const len = Math.hypot(x2 - x1, y2 - y1), cut = 0.3;
+                const ex = x2 - (x2 - x1) / len * cut, ey = y2 - (y2 - y1) / len * cut;
+                html += `<line x1="${x1}" y1="${y1}" x2="${ex}" y2="${ey}" class="${s.color}" stroke-width="0.16" stroke-linecap="round" marker-end="url(#ah-${s.color})"/>`;
+            }
+        }
+        group.innerHTML = html;
+    };
+
+    const clearShapes = () => { if (shapes.size) { shapes.clear(); drawShapes(); } };
+
     const onDown = (e) => {
+        if (e.button === 2) {
+            rightFrom = squareAt(e.clientX, e.clientY);
+            e.preventDefault();
+            return;
+        }
         if (e.button !== undefined && e.button !== 0) return;
+        clearShapes();
         if (e.target.closest(".promotion")) return; // the promotion picker handles its own clicks
         const sq = squareAt(e.clientX, e.clientY);
         if (sq < 0) return;
@@ -78,7 +120,22 @@ export function attachBoard(boardEl, dotnet) {
         dotnet.invokeMethodAsync("OnSquareUp", p.sq, p.dragging ? to : p.sq, p.dragging);
     };
 
-    const onUp = (e) => finish(e, false);
+    const onUp = (e) => {
+        if (e.button === 2) {
+            const to = squareAt(e.clientX, e.clientY);
+            if (rightFrom >= 0 && to >= 0) {
+                const color = e.shiftKey ? "red" : (e.altKey || e.ctrlKey || e.metaKey) ? "blue" : "green";
+                const key = rightFrom + "-" + to;
+                const existing = shapes.get(key);
+                if (existing && existing.color === color) shapes.delete(key);
+                else shapes.set(key, { from: rightFrom, to, color });
+                drawShapes();
+            }
+            rightFrom = -1;
+            return;
+        }
+        finish(e, false);
+    };
     const onCancel = (e) => finish(e, true);
     const onContext = (e) => e.preventDefault();
 
@@ -89,7 +146,10 @@ export function attachBoard(boardEl, dotnet) {
     boardEl.addEventListener("contextmenu", onContext);
 
     return {
+        clearShapes,
+        redraw: drawShapes, // e.g. after the board is flipped
         dispose() {
+            layer.remove();
             boardEl.removeEventListener("pointerdown", onDown);
             boardEl.removeEventListener("pointermove", onMove);
             boardEl.removeEventListener("pointerup", onUp);
