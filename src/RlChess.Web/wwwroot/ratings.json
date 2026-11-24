@@ -1,0 +1,16 @@
+{
+  "anchor": "random",
+  "anchorRating": 400,
+  "updated": "2026-11-24",
+  "gamesPerPairing": 0,
+  "players": [
+    {
+      "spec": "random",
+      "name": "Random",
+      "rating": 400,
+      "margin": 0,
+      "games": 0,
+      "score": 0.5
+    }
+  ]
+}

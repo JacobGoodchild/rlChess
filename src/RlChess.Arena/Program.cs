@@ -12,6 +12,8 @@ using ChessGame = RlChess.Engine.Game;
 // Players are looked up in PlayerRegistry (src/RlChess.Players/PlayerRegistry.cs): "id" or "id:level".
 
 if (args.Length >= 2 && args[0] == "bench") return Bench.Run(args[1..]);
+if (args.Length >= 1 && args[0] == "ratings") return RatingsCommand.Run(args[1..]);
+if (args.Length >= 1 && args[0] == "openings") return OpeningsCommand.Run(args[1..]);
 
 // "perft <depth> [fen]": count move sequences (checks move generation and measures speed).
 if (args.Length >= 2 && args[0] == "perft")
@@ -39,6 +41,7 @@ string? startFen = null;
 int maxPlies = 1000;
 int? seed = null;
 int threads = 1;
+bool thinking = false;
 
 for (int i = 0; i < args.Length; i++)
 {
@@ -50,6 +53,7 @@ for (int i = 0; i < args.Length; i++)
         case "--p2": p2Id = Next(); break;
         case "--pgn": pgnPath = Next(); break;
         case "--report": reportPath = Next(); break;
+        case "--thinking": thinking = true; break;
         case "--export": exportPath = Next(); break;
         case "--fen": startFen = Next(); break;
         case "--max-plies": maxPlies = int.Parse(Next()); break;
@@ -91,7 +95,7 @@ catch (ArgumentException e)
     return 1;
 }
 
-threads = Math.Clamp(threads, 1, Math.Max(1, games));
+threads = thinking ? 1 : Math.Clamp(threads, 1, Math.Max(1, games)); // per-move printing reads best one game at a time
 Console.WriteLine($"Arena: {Label(p1Id)} (P1) vs {Label(p2Id)} (P2), {games} games, alternating colours, {threads} thread(s).");
 
 bool seededRandom(string spec) => seed is not null && PlayerRegistry.TryParse(spec, out var e, out _, out _) && e.Id == "random";
@@ -107,7 +111,10 @@ Parallel.For(0, games, new ParallelOptions { MaxDegreeOfParallelism = threads },
         var a = seededRandom(p1Id) ? Create(p1Id, 2 * g) : local.P1;
         var b = seededRandom(p2Id) ? Create(p2Id, 2 * g + 1) : local.P2;
         bool p1White = g % 2 == 0;
-        results[g] = MatchRunner.PlayGame(p1White ? a : b, p1White ? b : a, startFen, maxPlies, recordSan: pgnPath is not null);
+        var gameNumber = g + 1;
+        results[g] = MatchRunner.PlayGame(p1White ? a : b, p1White ? b : a, startFen, maxPlies,
+            recordSan: pgnPath is not null || thinking,
+            onMove: thinking ? r => PrintThinking(gameNumber, r) : null);
         int done = Interlocked.Increment(ref finished);
         if (games >= 20 && done % Math.Max(1, games / 10) == 0) Console.WriteLine($"  {done}/{games} games...");
         return local;
@@ -175,6 +182,18 @@ if (reportPath is not null)
 }
 return 0;
 
+// --thinking: one line per move with what the player reported.
+static void PrintThinking(int gameNumber, MoveReport r)
+{
+    var g = r.Game;
+    int ply = g.Moves.Count - 1;
+    var before = g.PositionAt(ply);
+    string number = r.Mover == Color.White ? $"{before.FullmoveNumber}." : $"{before.FullmoveNumber}...";
+    string info = r.Thinking is { } t ? ThinkingText.Format(t, before) : "(doesn't report its thinking)";
+    Console.WriteLine($"  game {gameNumber} {number,-6} {g.SanMoves[ply],-7} {r.Player.Name,-12} {r.Elapsed.TotalMilliseconds,7:0} ms  {info}");
+    if (g.IsOver) Console.WriteLine($"  game {gameNumber} over: {g.Result}");
+}
+
 static void PrintHelp()
 {
     Console.WriteLine("""
@@ -183,11 +202,14 @@ static void PrintHelp()
         Also: perft <depth> [fen]   count all move sequences to <depth> (speed/correctness check)
               bench <id[:level]> [--positions N] [--seed N]
                                     time how long a player takes per move (and positions/sec)
+              ratings [--games N] [--players a,b:3,...] [--out file] [--threads N]
+                                    round robin between bots; writes ratings for the website
 
         Options:
           -n, --games <N>     number of games (default 100)
           --p1 <id[:level]>   first player, e.g. random or minimax:4 (default random)
           --p2 <id[:level]>   second player (default random)
+          --thinking          print each move with what the player was thinking (depth, score, ...)
           --pgn <file>        save all games to a PGN file
           --report <file>     save a results page with a chart (open the .html file in a browser)
           --export <file>     save every position as training data (CSV: game,ply,fen,move,result)

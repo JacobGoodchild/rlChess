@@ -34,21 +34,29 @@ public static class PlayerRegistry
     /// <param name="Category">Which group it appears in.</param>
     /// <param name="Create">Makes a fresh player. Receives the chosen level (players without levels can ignore it).</param>
     /// <param name="Levels">The levels it supports, or null for none (then no slider is shown).</param>
+    /// <param name="Version">A version label like "v1" for a frozen copy of a bot (see README: "Saving a version").</param>
     public sealed record Entry(
         string Id,
         string DisplayName,
         string Description,
         PlayerCategory Category,
         Func<int, IPlayer> Create,
-        LevelRange? Levels = null)
+        LevelRange? Levels = null,
+        string? Version = null)
     {
+        /// <summary>"Minimax" or "Minimax v1".</summary>
+        public string FullName => Version is null ? DisplayName : $"{DisplayName} {Version}";
+
+        /// <summary>The key for this player at a level, as used by the Arena and ratings: "minimax:4" or "random".</summary>
+        public string Spec(int? level) => Levels is null ? Id : $"{Id}:{Levels.Clamp(level ?? Levels.Default)}";
+
         /// <summary>Creates the player at <paramref name="level"/> (clamped to its range; default if null).</summary>
         public IPlayer CreatePlayer(int? level = null) =>
             Create(Levels is null ? 0 : Levels.Clamp(level ?? Levels.Default));
 
         /// <summary>"Minimax" or "Minimax (level 4)".</summary>
         public string Label(int? level) =>
-            Levels is null ? DisplayName : $"{DisplayName} (level {Levels.Clamp(level ?? Levels.Default)})";
+            Levels is null ? FullName : $"{FullName} (level {Levels.Clamp(level ?? Levels.Default)})";
     }
 
     public static readonly IReadOnlyList<Entry> All =
@@ -60,6 +68,10 @@ public static class PlayerRegistry
         //     level => new MinimaxPlayer(depth: level), new LevelRange(1, 10, 4)),
         // new("rl", "RL network", "Trained by self-play.", PlayerCategory.AI,
         //     level => new RlPlayer($"models/generation-{level}.onnx"), new LevelRange(1, 20, 20)),
+        //
+        // A frozen copy (see README, "Saving a version of your bot"):
+        // new("minimax-v1", "Minimax", "My first minimax, kept as it was.", PlayerCategory.Computer,
+        //     level => new Frozen.Minimax_v1.MinimaxPlayer(depth: level), new LevelRange(1, 10, 4), Version: "v1"),
     ];
 
     public static Entry? Find(string id) =>

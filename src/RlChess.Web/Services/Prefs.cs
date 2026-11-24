@@ -26,6 +26,21 @@ public sealed class Prefs(IJSRuntime js)
     /// <summary>Per computer move, for games without a clock (null = no limit).</summary>
     public TimeSpan? ThinkLimit { get; private set; } = TimeSpan.FromSeconds(10);
 
+    // ---- Advanced features (all off by default; switched on in the settings menu)
+    /// <summary>Show what a computer player reports while it thinks.</summary>
+    public bool ShowThinking { get; private set; }
+    /// <summary>Evaluation bar beside the board (loads the analysis engine).</summary>
+    public bool EvalBar { get; private set; }
+    /// <summary>Game review after a game (loads the analysis engine).</summary>
+    public bool Review { get; private set; }
+    /// <summary>Show the opening's name during games.</summary>
+    public bool OpeningNames { get; private set; }
+    /// <summary>What judges positions: "stockfish", or the id of one of your bots that reports a score.</summary>
+    public string AnalysisSource { get; private set; } = "stockfish";
+
+    /// <summary>The analysis engine is needed (only then is it downloaded).</summary>
+    public bool NeedsAnalysis => EvalBar || Review;
+
     public bool Loaded { get; private set; }
 
     /// <summary>Raised after any setting changes (the layout re-renders with the new theme).</summary>
@@ -47,6 +62,11 @@ public sealed class Prefs(IJSRuntime js)
         if (Settings.AnimationSpeeds.Any(a => a.Key == anim)) Animation = anim!;
         HoverDots = await Get("hoverdots") != "0";
         ThinkLimit = Settings.ParseThinkLimit(await Get("thinklimit"));
+        ShowThinking = await Get("adv.thinking") == "1";
+        EvalBar = await Get("adv.evalbar") == "1";
+        Review = await Get("adv.review") == "1";
+        OpeningNames = await Get("adv.openings") == "1";
+        AnalysisSource = await Get("adv.source") is { Length: > 0 } src ? src : "stockfish";
         Loaded = true;
         Changed?.Invoke();
     }
@@ -58,6 +78,12 @@ public sealed class Prefs(IJSRuntime js)
     public Task SetAnimation(string v) { Animation = v; return Save("animation", v); }
     public Task SetHoverDots(bool v) { HoverDots = v; return Save("hoverdots", v ? "1" : "0"); }
     public Task SetThinkLimit(TimeSpan? v) { ThinkLimit = v; return Save("thinklimit", Settings.FormatThinkLimit(v)); }
+
+    public Task SetShowThinking(bool v) { ShowThinking = v; return Save("adv.thinking", v ? "1" : "0"); }
+    public Task SetEvalBar(bool v) { EvalBar = v; return Save("adv.evalbar", v ? "1" : "0"); }
+    public Task SetReview(bool v) { Review = v; return Save("adv.review", v ? "1" : "0"); }
+    public Task SetOpeningNames(bool v) { OpeningNames = v; return Save("adv.openings", v ? "1" : "0"); }
+    public Task SetAnalysisSource(string v) { AnalysisSource = v; return Save("adv.source", v); }
 
     private async Task Save(string key, string value)
     {
