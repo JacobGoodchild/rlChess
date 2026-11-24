@@ -119,8 +119,9 @@ in games with a clock, the clock is the limit.
   *two players* on one device, or *computer vs computer* (watch two players, with pause and speed).
   Optional clocks: 1+0, 3+2, 5+3, 10+0 or custom. Computers' thinking time counts on their clock.
 - **Moving:** drag, or click a piece then its square. While the computer thinks you can
-  **premove**: your move is shown in blue and played the moment it's your turn, if still legal.
-  Right-click or click an empty square to cancel it.
+  **premove**, even several moves in a row: the board shows your pieces where they'll be, and
+  each move is played the moment it's your turn. If one isn't legal by then, it and the rest of
+  the queue are dropped. Right-click or click an empty square to cancel the queue.
 - **Analyse:** the button above the move list lets either side try other moves from any position;
   your line appears under the move list as a variation, and the real game is left untouched.
   (Paused during a game against the computer; not available mid-game with a clock.)

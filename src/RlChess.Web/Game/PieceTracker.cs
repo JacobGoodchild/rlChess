@@ -16,11 +16,13 @@ public sealed class PieceTracker
     public IReadOnlyList<TrackedPiece> Pieces => _pieces;
 
     /// <summary>Forget everything and lay out the pieces of <paramref name="position"/> afresh.</summary>
-    public void Reset(Position position)
+    public void Reset(Position position) => Reset(sq => position[sq]);
+
+    public void Reset(Func<int, Piece> at)
     {
         _pieces.Clear();
         for (int sq = 0; sq < 64; sq++)
-            if (position[sq] != Piece.None) _pieces.Add(new TrackedPiece(_nextId++, position[sq], sq));
+            if (at(sq) != Piece.None) _pieces.Add(new TrackedPiece(_nextId++, at(sq), sq));
     }
 
     /// <summary>
@@ -28,19 +30,22 @@ public sealed class PieceTracker
     /// pieces slide to their new squares (used for undo and jumping around the move list).
     /// Pieces that stay put keep their id; others are matched to the nearest same piece.
     /// </summary>
-    public void SyncTo(Position position)
+    public void SyncTo(Position position) => SyncTo(sq => position[sq]);
+
+    /// <summary>Same, for any board (e.g. the "virtual" board with queued premoves applied).</summary>
+    public void SyncTo(Func<int, Piece> at)
     {
         var unmatchedOld = new List<TrackedPiece>();
         var result = new List<TrackedPiece>();
         var filled = new bool[64];
         foreach (var p in _pieces)
         {
-            if (position[p.Square] == p.Piece) { result.Add(p); filled[p.Square] = true; }
+            if (at(p.Square) == p.Piece) { result.Add(p); filled[p.Square] = true; }
             else unmatchedOld.Add(p);
         }
         for (int sq = 0; sq < 64; sq++)
         {
-            var piece = position[sq];
+            var piece = at(sq);
             if (piece == Piece.None || filled[sq]) continue;
             TrackedPiece? best = null;
             int bestDist = int.MaxValue;

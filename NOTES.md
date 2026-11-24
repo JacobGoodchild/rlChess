@@ -41,9 +41,11 @@ Read this first. It's the hand-over log between work sessions.
 - Clocks start after the first move of the game. The bot's cosmetic pre-move pause doesn't use
   its clock. No undo in clock games. `ClockDisplay` re-renders itself every 100 ms; `WatchFlags`
   in Home detects flag falls.
-- Premoves (vs computer only): movement-pattern destinations (`Game/Premoves.cs`, like lichess),
-  auto-queen on promotion, played instantly if legal else dropped; right-click or empty-square
-  click cancels. A selection or drag in progress survives the computer's move (`keepSelection`):
+- Premoves (vs computer only), several can be queued: movement-pattern destinations
+  (`Game/Premoves.cs`, like lichess), computed on a "virtual" board with the queue applied
+  (`VirtualBoard`), which is what the board shows meanwhile. One is played per turn, auto-queen on
+  promotion; the first illegal one drops the rest of the queue. Right-click or empty-square click
+  cancels the queue; viewing another position (history/analysis) also clears it. A selection or drag in progress survives the computer's move (`keepSelection`):
   its dots switch to real moves if it's now the player's turn, so premove chains aren't interrupted.
 - Analysis: one variation at a time, branching from any main-line position; shown under the
   main-line row it replaces. Pauses vs-computer games; disabled mid-game with a clock.

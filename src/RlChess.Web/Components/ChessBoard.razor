@@ -14,10 +14,12 @@
         {
             <div class="hl check" style="@Pos(CheckSquare)"></div>
         }
-        @if (Premove is (int pf, int pt))
+        @if (Premoves is not null)
         {
-            <div class="hl premove" style="@Pos(pf)"></div>
-            <div class="hl premove" style="@Pos(pt)"></div>
+            foreach (var sq in Premoves.SelectMany(pm => new[] { pm.From, pm.To }).Distinct())
+            {
+                <div class="hl premove" style="@Pos(sq)"></div>
+            }
         }
         @if (Selected >= 0)
         {
@@ -93,8 +95,8 @@
     /// <summary>Changes whenever a different position is shown; right-click arrows are cleared then.</summary>
     [Parameter] public int PositionKey { get; set; }
     [Parameter] public EventCallback<int> OnSquareDownCallback { get; set; }
-    /// <summary>The queued premove (from, to), shown highlighted.</summary>
-    [Parameter] public (int From, int To)? Premove { get; set; }
+    /// <summary>Queued premoves (from, to), shown highlighted.</summary>
+    [Parameter] public IReadOnlyList<(int From, int To)>? Premoves { get; set; }
     /// <summary>The destination dots are premove targets (drawn in the premove colour).</summary>
     [Parameter] public bool PremoveDests { get; set; }
     [Parameter] public EventCallback OnRightClickCallback { get; set; }

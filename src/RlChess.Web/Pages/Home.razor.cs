@@ -50,7 +50,8 @@ public partial class Home : IAsyncDisposable
     private bool _destsArePremove;
     private bool _clickedSelected;
     private (int From, int To)? _pendingPromotion;
-    private (int From, int To)? _premove;
+    private readonly List<(int From, int To)> _premoves = new(); // queued premoves, played in order
+    private Piece[]? _virtual;                        // the board with queued premoves applied (null = none)
 
     // ------------------------------------------------------------------ analysis (one variation)
     private bool _analysing;
@@ -126,7 +127,8 @@ public partial class Home : IAsyncDisposable
         _game = existing ?? new ChessGame(fen);
         _computerError = null;
         _paused = false;
-        _premove = null;
+        _premoves.Clear();
+        _virtual = null;
         _drawOfferBy = null;
         ClearVariation();
         _analysing = false;
@@ -292,7 +294,7 @@ public partial class Home : IAsyncDisposable
     {
         AbandonPendingWork();
         _clock?.Stop();
-        _premove = null;
+        ClearPremoves();
         _game.End(thinkLimit
             ? GameResult.Win(side.Opponent(), GameEndReason.ThinkTimeExceeded)
             : TimeoutRules.Result(_game.Position, side));
@@ -328,14 +330,15 @@ public partial class Home : IAsyncDisposable
         var mover = _game.SideToMove;
         var before = _game.Position.Clone();
         _game.Play(move);
-        _tracker.Apply(before, move);
+        if (_premoves.Count > 0 || _virtual is not null) UpdateVirtual(animate); // board shows queued premoves
+        else _tracker.Apply(before, move);
         _viewPly = _game.Moves.Count;
         _shown = _game.Position;
         _animate = animate;
         _fenInput = _shown.ToFen();
         ClearSelection();
         // Re-select the piece (with fresh destinations: real moves if it's now their turn, else premoves).
-        if (keep >= 0 && MovableColor is Color mine && _shown[keep].IsColor(mine)) Select(keep);
+        if (keep >= 0 && MovableColor is Color mine && At(keep).IsColor(mine)) Select(keep);
 
         if (_clock is not null)
         {
@@ -352,8 +355,9 @@ public partial class Home : IAsyncDisposable
 
     private void TryPlayPremove()
     {
-        if (_premove is not (int from, int to)) return;
-        _premove = null;
+        if (_premoves.Count == 0) return;
+        var (from, to) = _premoves[0];
+        _premoves.RemoveAt(0);
         var piece = _game.Position[from];
         var promo = piece.Type() == PieceType.Pawn && Square.Rank(to) is 0 or 7 ? PieceType.Queen : PieceType.None;
         if (piece.IsColor(_game.SideToMove) && _game.Position.TryFindLegalMove(from, to, promo, out var move))
@@ -361,8 +365,42 @@ public partial class Home : IAsyncDisposable
             PlayMove(move, animate: true, keepSelection: true);
             ScheduleNext();
         }
-        // Otherwise it's silently dropped.
+        else
+        {
+            // Not legal any more: drop it and the rest of the queue (they were planned after it).
+            _premoves.Clear();
+            UpdateVirtual(animate: true);
+        }
     }
+
+    /// <summary>Shows the board with the queued premoves applied (or the real board when there are none).</summary>
+    private void UpdateVirtual(bool animate)
+    {
+        if (_premoves.Count == 0)
+        {
+            if (_virtual is null) return;
+            _virtual = null;
+            _tracker.SyncTo(_shown);
+        }
+        else
+        {
+            var (board, applied) = VirtualBoard.Apply(_game.Position, _premoves, HumanColor);
+            if (applied < _premoves.Count) _premoves.RemoveRange(applied, _premoves.Count - applied); // a premoved piece was captured
+            _virtual = board;
+            _tracker.SyncTo(sq => board[sq]);
+        }
+        _animate = animate;
+    }
+
+    private void ClearPremoves()
+    {
+        if (_premoves.Count == 0 && _virtual is null) return;
+        _premoves.Clear();
+        UpdateVirtual(animate: true);
+    }
+
+    /// <summary>The piece on a square as the player sees it (with queued premoves applied).</summary>
+    private Piece At(int sq) => _virtual is not null ? _virtual[sq] : _shown[sq];
 
     // ================================================================== controls
 
@@ -386,7 +424,7 @@ public partial class Home : IAsyncDisposable
         if (!CanUndo) return;
         AbandonPendingWork();
         _computerError = null;
-        _premove = null;
+        ClearPremoves();
         _drawOfferBy = null;
         // Take back until it's a person's turn again (against a computer: your move and its reply).
         do { _game.Undo(); }
@@ -403,7 +441,7 @@ public partial class Home : IAsyncDisposable
         if (_game.IsOver || _mode == GameMode.ComputerVsComputer) return;
         AbandonPendingWork();
         _clock?.Stop();
-        _premove = null;
+        ClearPremoves();
         var loser = _mode == GameMode.VsComputer ? HumanColor : _game.SideToMove;
         _game.End(GameResult.Win(loser.Opponent(), GameEndReason.Resignation));
         ShowMain(_game.Moves.Count, animate: false, sound: false);
@@ -461,7 +499,7 @@ public partial class Home : IAsyncDisposable
         {
             AbandonPendingWork();
             _analysing = true;
-            _premove = null;
+            ClearPremoves();
             _pendingPromotion = null;
             ClearSelection();
         }
@@ -539,6 +577,8 @@ public partial class Home : IAsyncDisposable
 
     private void Show(Position target, Move? step, bool animate, bool sound)
     {
+        _premoves.Clear(); // looking at another position cancels premoves
+        _virtual = null;
         if (step is Move m)
         {
             _tracker.Apply(_shown, m);
@@ -581,7 +621,7 @@ public partial class Home : IAsyncDisposable
             case "ArrowDown": case "End": ShowMain(_game.Moves.Count); break;
             case "f": Flip(); break;
             case "Escape":
-                ClearSelection(); _pendingPromotion = null; _premove = null;
+                ClearSelection(); _pendingPromotion = null; ClearPremoves();
                 _showNewGame = false; _showSettings = false;
                 break;
         }
@@ -621,7 +661,7 @@ public partial class Home : IAsyncDisposable
         _selected = sq;
         _destsArePremove = PremoveMode;
         _dests = _destsArePremove
-            ? Premoves.Destinations(_shown, sq)
+            ? Premoves.Destinations(At, _game.Position.Castling, sq)
             : _shown.GetLegalMoves().Where(m => m.From == sq).Select(m => m.To).ToHashSet();
     }
 
@@ -639,7 +679,7 @@ public partial class Home : IAsyncDisposable
             TryMove(_selected, sq, animate: true);
             return;
         }
-        if (_shown[sq].IsColor(mine))
+        if (At(sq).IsColor(mine))
         {
             _clickedSelected = _selected == sq;
             Select(sq);
@@ -647,7 +687,7 @@ public partial class Home : IAsyncDisposable
         else
         {
             ClearSelection();
-            _premove = null; // clicking an empty (or enemy) square cancels a premove
+            ClearPremoves(); // clicking an empty (or enemy) square cancels the premoves
         }
     }
 
@@ -671,8 +711,8 @@ public partial class Home : IAsyncDisposable
 
     private void OnRightClick()
     {
-        if (_premove is null && _selected < 0) return;
-        _premove = null;
+        if (_premoves.Count == 0 && _selected < 0) return;
+        ClearPremoves();
         ClearSelection();
     }
 
@@ -680,8 +720,9 @@ public partial class Home : IAsyncDisposable
     {
         if (_destsArePremove)
         {
-            _premove = (from, to);
+            _premoves.Add((from, to));
             ClearSelection();
+            UpdateVirtual(animate);
             return;
         }
         var candidates = _shown.GetLegalMoves().Where(m => m.From == from && m.To == to).ToList();
