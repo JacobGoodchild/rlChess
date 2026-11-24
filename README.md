@@ -115,13 +115,25 @@ in games with a clock, the clock is the limit.
 
 ## Using the website
 
-Drag pieces or click a piece then its target square. Right-click (or right-drag) draws circles and
-arrows (hold Shift for red, Alt/Ctrl for blue). Keyboard: ← → step through moves, ↑ ↓ jump to the
-start/end, `f` flips the board, Esc cancels. The square icon at the top switches board colours.
+- **New game:** play *vs computer* (pick the opponent, its level if it has levels, and your colour),
+  *two players* on one device, or *computer vs computer* (watch two players, with pause and speed).
+  Optional clocks: 1+0, 3+2, 5+3, 10+0 or custom. Computers' thinking time counts on their clock.
+- **Moving:** drag, or click a piece then its square. While the computer thinks you can
+  **premove**: your move is shown in blue and played the moment it's your turn, if still legal.
+  Right-click or click an empty square to cancel it.
+- **Analyse:** the button above the move list lets either side try other moves from any position;
+  your line appears under the move list as a variation, and the real game is left untouched.
+  (Paused during a game against the computer; not available mid-game with a clock.)
+- **Other:** right-click/drag draws circles and arrows (Shift = red, Alt/Ctrl = blue). Keyboard:
+  ← → step through moves, ↑ ↓ jump to the start/end, `f` flips the board, Esc cancels.
+  The gear menu has board colours, piece sets and the computer think-time limit.
+  Two-player games have a small "Offer draw" button.
 
 ## Rules notes
 
 - Draws by threefold repetition and the fifty-move rule are applied automatically (no claiming).
+- Running out of time loses, unless the opponent couldn't possibly checkmate (e.g. a lone king,
+  or king and knight against a bare king): then it's a draw. See `TimeoutRules` in the engine.
 - Insufficient material: K v K, K + one minor piece v K, and positions where all remaining
   minor pieces are bishops on the same colour. (K+N v K+N is not counted: a mate is possible.)
 

@@ -2,67 +2,74 @@
 
 Read this first. It's the hand-over log between work sessions.
 
-## Status (end of session 1)
+## Status (end of session 2)
 
-Done and working:
-- **Engine** (`src/RlChess.Engine`): 64-square board ("mailbox") with pre-computed move tables,
-  pseudo-legal generation + make/check/undo legality filter, Zobrist hashing, FEN in/out,
-  SAN + UCI formatting/parsing, `Game` (move list, SAN, result, PGN export), `Pgn.Parse/ParseAll`
-  (PGN import: skips comments, variations, NAGs), `Position.ToAscii()`, all end-of-game rules.
-  FEN loading rejects impossible positions (pawns on back ranks, side not to move in check).
-  Perft matches every standard position (start, Kiwipete, positions 3-6) at the depths in
-  `PerftTests.cs`. Legality shortcut: when not in check, moves by unpinned non-king pieces (and not
-  en passant) skip the make/check/undo test. ~50M positions/sec in `perft 6` on the dev container
-  (`dotnet run --project src/RlChess.Arena -c Release -- perft 6`).
-- **Players**: `IPlayer`, optional `IAsyncPlayer` (for slow players on the website),
-  `RandomPlayer` (optional seed) and `MatchRunner.PlayGame` live in the engine. `PlayerRegistry`
-  (one line per player → shows on website + Arena) lives in `src/RlChess.Players`, which the Web
-  and Arena reference, so the owner's players can be in their own projects without circular refs.
-- **Arena** (`src/RlChess.Arena`): `--games --p1 --p2 --pgn --fen --max-plies --seed --threads`.
-  Random vs random on the 4-core dev container: ~530 games/sec on one thread, ~1050+ with
-  `--threads all`; slower (~650) with `--pgn` because move names (SAN) are then recorded.
-  Seeded runs give identical results whatever the thread count. Prints an Elo-difference estimate. Each worker thread gets its own
-  player objects, so players needn't be thread-safe.
-- **Website** (`src/RlChess.Web`): play vs Random (choose colour) or two players on one device;
-  drag-and-drop and click-click, legal-move dots, last move, check highlight; promotion picker;
-  SAN move list with history browsing (click a move, arrow keys, Home/End); undo (vs computer it
-  takes back to your turn); flip (button or `f`); new game dialog; rematch; game-over result;
-  sounds + mute (remembered); FEN load/copy, PGN copy/download + import (loads as a two-player
-  game); resign; a clear status message if a computer player throws or returns an illegal move
-  (details logged to the browser console with an `[rlChess]` prefix);
-  right-click arrows/circles; board colour themes (remembered); pieces slide on undo/back-navigation;
-  phone layout (touch tap and drag tested); light/dark follows the device.
-- **CI/CD**: `.github/workflows/deploy.yml` builds, runs fast tests, publishes, rewrites
-  `<base href>` to `/rlChess/`, adds `.nojekyll` and `404.html`, deploys to Pages.
+### Engine (`src/RlChess.Engine`)
+- 64-square board with pre-computed tables; pseudo-legal generation + legality filter with a
+  shortcut (not in check, unpinned non-king, not en passant → legal without make/undo). Zobrist
+  hashing, FEN in/out (rejects impossible positions), SAN + UCI, `Game` (moves, SAN, result, PGN
+  export, `recordSan: false` for speed), `Pgn.Parse/ParseAll`, `Position.ToAscii()`.
+- Perft matches all standard positions; ~50M positions/sec (`Arena -- perft 6`).
+- `ChessClock` + `TimeControl` (increments, pause/resume via `Stop`/`Start`, injectable time
+  source for tests) and `TimeoutRules` (flag → loss, or draw if the opponent can't ever mate;
+  a simplified version of lichess's rule, see the XML docs).
+- End reasons now include Timeout, TimeoutVsInsufficientMaterial, Agreement, ThinkTimeExceeded.
+- `IPlayer`, `IAsyncPlayer` (cancellable; should return best-so-far when cancelled),
+  `RandomPlayer`, `MatchRunner`.
+
+### Players (`src/RlChess.Players`)
+- `PlayerRegistry.Entry(Id, DisplayName, Description, Category, Create(level), Levels?)`.
+  Categories: Random / Computer (search) / AI (learned). `LevelRange(min, max, default)`;
+  levels are clamped. `TryParse("id:level")` is shared by the Arena.
+- Only `random` exists. The owner writes minimax and RL players himself: **don't write any**.
+
+### Arena (`src/RlChess.Arena`)
+- `--games --p1 id[:level] --p2 id[:level] --pgn --fen --max-plies --seed --threads`, `perft`.
+  Prints results, draw reasons, average length, speed, Elo difference ± 95% margin.
+
+### Website (`src/RlChess.Web`)
+- `Pages/Home.razor(.cs)`: one page. Each colour has a seat (person or bot). `ScheduleNext()`
+  decides what happens after any change (bot move / premove / wait). `_generation` + `_cts` cancel
+  stale bot work on new game, undo, pause, resign, time-out.
+- Modes: vs computer, two players, computer vs computer (pause, slow/normal/fast).
+- New-game dialog (`Components/NewGameDialog.razor`, `PlayerPicker.razor`): grouped players
+  with "none yet", level slider for players with levels, colour, clock presets + custom.
+  Choices remembered (`Game/GameSetup.cs`, a small key=value string in localStorage).
+- Think-time limit (settings menu, default 10 s) for games without a clock. Async players are
+  cancelled at the limit and get 1 s to return a move; sync players are checked afterwards. Over the
+  limit → the bot loses ("Think-time limit exceeded"). With a clock, the clock is the limit.
+- Clocks start after the first move of the game. The bot's cosmetic pre-move pause doesn't use
+  its clock. No undo in clock games. `ClockDisplay` re-renders itself every 100 ms; `WatchFlags`
+  in Home detects flag falls.
+- Premoves (vs computer only): movement-pattern destinations (`Game/Premoves.cs`, like lichess),
+  auto-queen on promotion, played instantly if legal else dropped; right-click or empty-square
+  click cancels.
+- Analysis: one variation at a time, branching from any main-line position; shown under the
+  main-line row it replaces. Pauses vs-computer games; disabled mid-game with a clock.
+- Draw offers in two-player games (moving instead of answering declines).
+- Settings menu (gear): board colours, piece sets, think limit. Mute stays in the top bar.
+- Piece sets in `wwwroot/pieces/<set>/` (each with its licence). CSS is generated by
+  `tools/make-piece-css.py`; add the set to `Game/Settings.cs` too.
+- Sounds: Kenney "Impact Sounds" (CC0), built by `tools/make-sounds.sh <folder with the .ogg files>`
+  (the source pack is not kept in the repo).
 
 ## Decisions / gotchas
-
-- The brief says "work on main": we push straight to `main`.
-- Licence: MIT. Pieces are Cburnett's from Wikimedia Commons, used under their **BSD** option
-  (verified on each file's Commons page: `{{self|GFDL|migration=relicense|BSD|GPL}}`). Lichess's
-  copies are listed as GPL, so we deliberately took the Commons originals.
-- Sounds are synthesised by `tools/make-sounds.sh` (ffmpeg) instead of downloaded: lichess's sounds
-  are AGPL, and the CC0 sources (Kenney) block scripted downloads. They have not been listened
-  to by a human yet; tweak the script and re-run if they sound off.
-- En passant square is only stored (and written to FEN) when a pawn could actually capture.
-  This keeps repetition detection correct. FEN round-trip tests expect this.
-- Threefold and fifty-move draws are automatic, not claimed.
-- `Game.Play` computes SAN for every move unless created with `recordSan: false` (the Arena does that
-  when not saving PGN). For RL self-play at max speed, `Position` + `GenerateLegalMoves(Span<Move>)`
-  directly is faster still.
-- Blazor shows its red error bar for anything written to stderr, so the web app logs with
-  `Console.WriteLine`, not `Console.Error`.
-- The website runs single-threaded WebAssembly. A slow `IPlayer` freezes the page while it thinks;
-  `IAsyncPlayer` + `await Task.Yield()` is the escape hatch. Real multi-threading would need
-  cross-origin-isolation headers that GitHub Pages doesn't send.
-- Local test of the published site: publish, copy `wwwroot` into a folder named `rlChess`, fix the
-  base href, serve the parent folder (see the workflow's "Prepare for GitHub Pages" step).
-- The SDK isn't preinstalled in the cloud container: install with `dotnet-install.sh --channel 10.0`.
+- Work straight on `main`; only push green builds.
+- Licences: repo MIT. Pieces: Cburnett (BSD option, verified on Commons), Fantasy/Spatial
+  (Maurizio Monge, MIT, verified in his repo; we use the configured copies lichess publishes),
+  Chessnut (Alexis Luengas, Apache 2.0, licence text shipped in its folder). Sounds: Kenney CC0
+  (licence text verified; files from a public mirror since kenney.nl blocks scripted downloads).
+- Blazor shows its red error bar for anything written to stderr: log with `Console.WriteLine`.
+- The website is single-threaded WebAssembly: a slow sync player freezes the page until it
+  returns. `IAsyncPlayer` + `await Task.Yield()` keeps it responsive and stoppable.
+- En passant square is only stored when a capture is possible (keeps repetition hashing right).
+- Local test of the published site: publish, copy `wwwroot` into a folder named `rlChess`, set the
+  base href to `/rlChess/`, serve the parent folder.
+- The SDK isn't preinstalled in the cloud container: `dotnet-install.sh --channel 10.0`.
+- Browser tests are ad-hoc Playwright scripts (not in the repo). Worth adding a small bUnit or
+  Playwright suite if the UI keeps growing.
 
 ## Ideas / next steps
-
-- Owner's own work: minimax/alpha-beta player, then RL player (not ours to write).
-- Possible polish: premoves, piece-set picker, clocks, draw offers, an "analysis" mode that lets
-  you branch off from an earlier position without undoing.
-- A faster (bitboard) move generator later if RL training needs more speed; perft tests make
-  swapping the internals safe.
+- Owner: minimax player (Computer category, level = depth), then RL player (AI category).
+- Possible: multiple variations / nested lines in analysis, sub-second clock display tweaks,
+  "berserk"-style options, an opening explorer from PGN files, automated UI tests.
