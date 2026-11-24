@@ -35,12 +35,21 @@ public sealed class PlayerAnalysis(IPlayer player) : IAnalysisEngine
 {
     public string Name => player.Name;
 
+    /// <summary>The verdict for a position where the game is already over (checkmate = lost, draws = 0), else null.</summary>
+    public static PositionEval? Finished(Position position)
+    {
+        var result = position.GetResult();
+        if (!result.IsOver) return null;
+        return new PositionEval(result.Outcome == GameOutcome.Draw ? EvalScore.FromCentipawns(0) : EvalScore.MateIn(0), null);
+    }
+
     /// <summary>True if this player can report scores (it implements <see cref="IReportsThinking"/>).</summary>
     public static bool CanAnalyse(IPlayer p) => p is IReportsThinking;
 
     public async Task<PositionEval> AnalyseAsync(Position position, AnalysisLimit limit, Action<PositionEval>? progress, CancellationToken cancellationToken)
     {
         if (player is not IReportsThinking reporter) throw new InvalidOperationException($"{player.Name} doesn't report its thinking.");
+        if (Finished(position) is { } done) return done;
         SearchInfo? last = null;
         reporter.Report = info =>
         {

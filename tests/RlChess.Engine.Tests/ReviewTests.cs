@@ -94,6 +94,9 @@ public class MoveReviewTests
         Assert.Equal(MoveLabel.Brilliant, MoveReview.Classify(p, bxh7, Cp(150, bxh7), Cp(-160)).Label);
         // The same sacrifice when it doesn't work is just a mistake or worse.
         Assert.True(MoveReview.Classify(p, bxh7, Cp(150, bxh7), Cp(250)).Label is MoveLabel.Mistake or MoveLabel.Blunder);
+        // Grabbing a pawn while a piece was already attacked isn't a sacrifice (from a real game).
+        var g = Pgn.Parse("1. e4 e5 2. Nf3 Nc6 3. Bc4 Nd4 4. Nxe5 Qg5 5. Nxf7").Game;
+        Assert.False(MoveReview.IsSacrifice(g.Position, M(g.Position, "Qxg2")));
         // Ordinary developing moves aren't sacrifices; a defended trade isn't either.
         Assert.False(MoveReview.IsSacrifice(new Position(), M(new Position(), "Nf3")));
     }
@@ -235,4 +238,22 @@ public class ThinkingTests
     [Fact]
     public void CountsAreShort() => Assert.Equal(["999", "1.2k", "45k", "4.5M"],
         new long[] { 999, 1234, 45_000, 4_500_000 }.Select(ThinkingText.Count));
+}
+
+public class PlayerAnalysisTests
+{
+    [Fact]
+    public async Task FinishedPositionsDontAskThePlayer()
+    {
+        var mate = Position.FromFen("rnb1kbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 1 3");
+        var eval = await new PlayerAnalysis(new ThrowingReporter()).AnalyseAsync(mate, new AnalysisLimit(), null, default);
+        Assert.Equal(0, eval.Score.WinPercent);
+    }
+
+    private sealed class ThrowingReporter : IPlayer, IReportsThinking
+    {
+        public string Name => "Throws";
+        public Action<SearchInfo>? Report { get; set; }
+        public Move ChooseMove(Position position) => throw new InvalidOperationException("should not be asked");
+    }
 }

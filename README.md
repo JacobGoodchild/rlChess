@@ -49,6 +49,8 @@ Arena options: `--games`, `--p1`, `--p2`, `--pgn <file>`, `--fen <start position
 
 - `--report results.html`: saves a results page with a chart of the score as the games went on
   (open it in any browser; it works offline).
+- `--thinking`: prints every move with what the player reported (depth, positions, score, line),
+  for debugging. Plays one game at a time.
 - `--export data.csv`: saves every position as training data for a learning player. One row per
   position: `game,ply,fen,move,result`, where `move` is the move played (UCI, e.g. `e2e4`) and
   `result` is how the game ended *for the side to move* (1 win, 0 draw, -1 loss).
@@ -113,6 +115,69 @@ new("rl", "RL network", "Trained by self-play.", PlayerCategory.AI,
 
 In the Arena, add the level after a colon: `--p1 minimax:6 --p2 rl:12`.
 
+### Showing what your bot is thinking (optional)
+
+Let your player also implement `IReportsThinking` (one property). Whenever you like, for example
+after each depth of your search, call `Report` with whatever you know. Every field is optional:
+
+```csharp
+public sealed class MyPlayer : IPlayer, IReportsThinking
+{
+    public Action<SearchInfo>? Report { get; set; }   // set by the website/Arena; may be null
+
+    public Move ChooseMove(Position position)
+    {
+        // ... inside your search, e.g. when a depth is finished:
+        Report?.Invoke(new SearchInfo { Depth = depth, PositionsSearched = positions, BestMove = best });
+        // You can also pass Score = EvalScore.FromCentipawns(35) (or EvalScore.MateIn(3)) and
+        // Line = the moves you expect, e.g. [best, reply, ...].
+    }
+}
+```
+
+The website shows it live in a small panel (Settings → Advanced → *Bot thinking*), and the Arena
+prints it for every move with `--thinking`. Positions per second is worked out for you.
+
+### Saving a version of your bot ("Minimax v1")
+
+So an old version stays playable and testable forever while you keep improving the current one:
+
+1. Keep each bot in its own folder: `src/RlChess.Players/Bots/Minimax/`, with the namespace
+   `RlChess.Players.Bots.Minimax`, and everything it needs inside that folder.
+2. When you're happy with it, run from the repository root:
+
+   ```bash
+   python3 tools/freeze-bot.py Minimax v1
+   ```
+
+   It copies the folder to `src/RlChess.Players/Frozen/Minimax_v1/` and renames the namespace in the
+   copy, so the old and new versions can live side by side.
+3. Add one line to `PlayerRegistry.cs`: a copy of your bot's line with a new id, the frozen class
+   and a version label (the script prints an example):
+
+   ```csharp
+   new("minimax-v1", "Minimax", "My first minimax.", PlayerCategory.Computer,
+       level => new Frozen.Minimax_v1.MinimaxPlayer(depth: level), new LevelRange(1, 10, 4), Version: "v1"),
+   ```
+
+It then shows on the website as *Minimax v1*, and you can play it in the Arena (`--p1 minimax-v1`).
+Don't edit frozen copies; freeze again as `v2` when you want a new snapshot.
+
+### Ratings
+
+```bash
+dotnet run --project src/RlChess.Arena -c Release -- ratings --games 20
+```
+
+Every registered bot (at its default level) plays every other bot, half the games with each colour.
+`--games` is per pairing; `--players random,minimax:2,minimax:4,minimax-v1` picks who plays (handy to
+rate several levels). It prints a table and saves `src/RlChess.Web/wwwroot/ratings.json`; push it and
+the website shows the ratings on the bot cards (bots not in the file show "unrated").
+
+Ratings are Elo-style and worked out from all the results together. **Random is fixed at 400**, so
+numbers stay comparable between runs; a bot that beats Random 3 games out of 4 comes out around 590.
+The ± is a rough 95% range, which shrinks with more games.
+
 Handy engine calls: `position.GetLegalMoves()`, `MakeMove`/`UndoMove`, `IsInCheck`, `GetResult()`,
 `position[square]` (the piece on a square; squares are 0–63 with a1 = 0, h8 = 63), `Hash`
 (a 64-bit fingerprint, good for transposition tables), and the allocation-free
@@ -124,6 +189,52 @@ for several seconds freezes the page. If yours is slow, implement `IAsyncPlayer`
 website can stop it when it runs out of time (it cancels the `CancellationToken` it passes you;
 return your best move so far when that happens). The think-time limit is in the website's settings;
 in games with a clock, the clock is the limit.
+
+## Analysis engine (evaluation bar and game review)
+
+These need something that can judge positions, so the website uses **Stockfish** like the big
+chess sites do: the official "lite, single-threaded" WebAssembly build of Stockfish 19
+([stockfish.js](https://github.com/nmrugg/stockfish.js), npm package `stockfish@19.0.1`), running in a
+background worker so the page never freezes. It's only downloaded (about 1.8 MB, from jsDelivr) when
+you switch on the evaluation bar or game review.
+
+**Licence:** Stockfish is GPLv3. It isn't copied into this repository and isn't changed: your
+browser downloads the official build from the npm CDN, and the site talks to it with plain-text UCI
+commands, like any chess program talks to a separate engine. That keeps this repository MIT-licensed.
+The settings menu credits Stockfish and links to it. (If you'd rather host the files yourself,
+that's allowed too, as long as the GPL licence text and a link to the source go with them.)
+
+**Using your own bot instead:** any registered bot that reports a `Score` (see "Showing what your bot
+is thinking") appears under Settings → Advanced → *Analysis by*. The bar and review then use your
+bot (`PlayerAnalysis` in the engine). For full control you can implement `IAnalysisEngine` yourself.
+If your bot is slow, make it an `IAsyncPlayer` so it can be stopped after the time limit.
+
+### Game review rules
+
+Each move is judged by how much it changes the mover's **winning chances**. Engine scores become a
+win % with lichess's formula (`50 + 50 × (2 / (1 + e^(−0.00368208 × centipawns)) − 1)`; mate = 100%),
+then "loss" = win % before the move (with best play) − win % after the move played:
+
+| Label | Rule |
+| --- | --- |
+| **Book** | A known opening move: every move so far reaches a named position in lichess's opening list. |
+| **Brilliant** | A sacrifice (leaves a knight, bishop, rook or queen where it can be won for at least 2 points more than the move captured, not counting material that was already attacked), that loses under 2% and leaves you not worse (≥ 50%), when you weren't already completely winning. |
+| **Great** | The only good move: loses under 2%, and the second-best move would have lost at least 15% more (needs Stockfish's second line). |
+| **Best** | The engine's own choice (or loses under 0.5%). A forced move (the only legal move) is always Best. |
+| **Excellent** | Loses under 2%. |
+| **Good** | Loses under 5%. |
+| **Miss** | The opponent's last move was a Mistake or Blunder, you were clearly better (≥ 60%), and this move gave back at least 10% (but you're not losing). |
+| **Inaccuracy** | Loses 5–10%. |
+| **Mistake** | Loses 10–15%. |
+| **Blunder** | Loses 15% or more. |
+
+(The 5 / 10 / 15 steps are lichess's.) **Accuracy** per move is lichess's formula
+`103.1668 × e^(−0.04354 × loss) − 3.1669`; a player's game accuracy is the average of a
+volatility-weighted mean and a harmonic mean of their moves, also like lichess. Review uses
+Stockfish at depth 14 (or 1.5 s) per position with two lines.
+
+Opening names come from [lichess's chess-openings list](https://github.com/lichess-org/chess-openings)
+(public domain / CC0), built into `wwwroot/openings.tsv` with the Arena's `openings` command.
 
 ## Using the website
 
@@ -148,6 +259,13 @@ in games with a clock, the clock is the limit.
   bars to place them), choose who moves and castling rights, then *Play from here* or *Analyse*.
 - **Loading games:** paste a PGN (e.g. from lichess or chess.com) or a FEN under
   "Load a game · position · export" on the Play page.
+- **Choosing a bot:** the new-game dialog shows a card per bot, grouped Random / Computer / AI,
+  with its description, levels and rating (from the Arena's `ratings` command).
+- **Advanced features** (Settings → Advanced, all off by default): *Bot thinking* (a small live
+  panel), *Evaluation bar* (beside the board; tap or hover for the score, "M3" = mate in 3),
+  *Game review* (after a game, or for any game opened from Games/Arena/PGN: badges on every move,
+  accuracy, a graph you can click to jump to a move, progress and Cancel while it runs), and
+  *Opening names*.
 - **Other:** right-click/drag draws circles and arrows (Shift = red, Alt/Ctrl = blue). Keyboard:
   ← → step through moves, ↑ ↓ jump to the start/end, `f` flips the board, Esc cancels.
   The gear menu has board colours (including wood and marble), piece sets, how fast pieces move,

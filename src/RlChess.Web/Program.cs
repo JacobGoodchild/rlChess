@@ -12,5 +12,8 @@ builder.Services.AddScoped(sp => new HttpClient { BaseAddress = new Uri(builder.
 builder.Services.AddScoped<Prefs>();
 builder.Services.AddScoped<GameHistory>();
 builder.Services.AddScoped<AppState>();
+builder.Services.AddScoped<Analysis>();
+builder.Services.AddScoped<Openings>();
+builder.Services.AddScoped<BotRatings>();
 
 await builder.Build().RunAsync();

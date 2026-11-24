@@ -63,6 +63,27 @@
                             <button class="chip small @(limit == Prefs.ThinkLimit ? "chosen" : "")" @onclick="() => Prefs.SetThinkLimit(limit)">@Settings.ThinkLimitLabel(limit)</button>
                         }
                     </div>
+                    <details class="advanced">
+                        <summary>Advanced <span class="hint">@AdvancedCount</span></summary>
+                        @Toggle("Bot thinking", "What a computer reports while it thinks: depth, positions, best line", Prefs.ShowThinking, Prefs.SetShowThinking)
+                        @Toggle("Evaluation bar", "Who's better, beside the board", Prefs.EvalBar, Prefs.SetEvalBar)
+                        @Toggle("Game review", "Mark every move from Brilliant to Blunder, with accuracy", Prefs.Review, Prefs.SetReview)
+                        @Toggle("Opening names", "Name the opening during games", Prefs.OpeningNames, Prefs.SetOpeningNames)
+                        @if (Prefs.NeedsAnalysis)
+                        {
+                            <div class="menu-label">Analysis by</div>
+                            <div class="chips-row">
+                                <button class="chip small @(Prefs.AnalysisSource == "stockfish" ? "chosen" : "")" @onclick='() => Prefs.SetAnalysisSource("stockfish")'>Stockfish</button>
+                                @foreach (var e in AnalysisBots.All)
+                                {
+                                    <button class="chip small @(Prefs.AnalysisSource == e.Id ? "chosen" : "")" @onclick="() => Prefs.SetAnalysisSource(e.Id)">@e.FullName</button>
+                                }
+                            </div>
+                            <div class="credit">Stockfish (GPLv3, <a href="https://stockfishchess.org" target="_blank" rel="noopener">stockfishchess.org</a>) is downloaded from jsDelivr only while these are on.
+                                @if (AnalysisBots.All.Count == 0) { <span>Your own bots appear here once they report a score.</span> }
+                            </div>
+                        }
+                    </details>
                 </div>
             }
         </div>
@@ -87,6 +108,23 @@
     [Parameter] public RenderFragment? Actions { get; set; }
 
     private bool _showSettings;
+
+    private string AdvancedCount
+    {
+        get
+        {
+            int n = new[] { Prefs.ShowThinking, Prefs.EvalBar, Prefs.Review, Prefs.OpeningNames }.Count(b => b);
+            return n == 0 ? "" : $"({n} on)";
+        }
+    }
+
+    private RenderFragment Toggle(string title, string help, bool on, Func<bool, Task> set) => __builder =>
+    {
+        <label class="toggle-row">
+            <input type="checkbox" role="switch" checked="@on" @onchange="e => set(e.Value is true)" />
+            <span class="toggle-text"><span class="toggle-title">@title</span><span class="toggle-help">@help</span></span>
+        </label>
+    };
 
     /// <summary>Closes the settings menu (e.g. on Escape).</summary>
     public void CloseMenu() { _showSettings = false; StateHasChanged(); }

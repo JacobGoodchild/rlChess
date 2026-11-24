@@ -103,7 +103,8 @@ public static class MoveReview
 
     /// <summary>
     /// True if the move gives up material: after it, the opponent can win at least 2 points more than
-    /// the move captured (a piece left where it can be taken for free, or by something much cheaper).
+    /// the move captured (a piece left where it can be taken for free, or by something much cheaper),
+    /// not counting material that was already under attack before the move.
     /// Only knights, bishops, rooks and queens count as sacrificed (pawns don't).
     /// </summary>
     public static bool IsSacrifice(Position before, Move move)
@@ -113,7 +114,19 @@ public static class MoveReview
         var after = before.Clone();
         after.MakeMove(move);
         if (after.GetResult().IsOver) return false;
-        return MaxLoss(after, mover) - captured >= 2;
+        // Material that was already under attack before the move doesn't count as sacrificed by it.
+        return MaxLoss(after, mover) - captured - ThreatenedBefore(before) >= 2;
+    }
+
+    /// <summary>What the opponent could already win from the mover before the move (as if it were their turn).</summary>
+    private static int ThreatenedBefore(Position before)
+    {
+        if (before.IsInCheck) return 0;
+        var f = before.ToFen().Split(' ');
+        f[1] = f[1] == "w" ? "b" : "w";
+        f[3] = "-";
+        try { return MaxLoss(Position.FromFen(string.Join(' ', f)), before.SideToMove); }
+        catch (FormatException) { return 0; }
     }
 
     /// <summary>The most material <paramref name="victim"/> can lose to a single capture by the side to move.</summary>

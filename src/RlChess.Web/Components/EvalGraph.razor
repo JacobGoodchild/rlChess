@@ -1,0 +1,63 @@
+@* White's winning chances across the game. Click anywhere to jump to that move. *@
+<svg class="eval-graph" viewBox="0 0 @W @H" preserveAspectRatio="none" role="img" aria-label="Evaluation across the game">
+    <rect x="0" y="0" width="@W" height="@H" class="eg-black" />
+    <path d="@Area" class="eg-white" />
+    <line x1="0" x2="@W" y1="@(H / 2)" y2="@(H / 2)" class="eg-mid" />
+    @if (Current >= 0 && WhiteWin.Count > 1)
+    {
+        <line x1="@F(X(Current))" x2="@F(X(Current))" y1="0" y2="@H" class="eg-cursor" />
+    }
+    @foreach (var (ply, label) in Marks)
+    {
+        <circle cx="@F(X(ply))" cy="@F(Y(WhiteWin[ply]))" r="2.6" class="eg-dot @Badges.Css(label)" />
+    }
+    @for (int i = 0; i < WhiteWin.Count; i++)
+    {
+        int ply = i;
+        <rect x="@F(X(ply) - Step / 2)" y="0" width="@F(Math.Max(Step, 1))" height="@H" fill="transparent" class="eg-hit"
+              @onclick="() => OnPick.InvokeAsync(ply)">
+            <title>@Tip(ply)</title>
+        </rect>
+    }
+</svg>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<double> WhiteWin { get; set; } = [];
+    /// <summary>Labels of the moves (index = ply - 1).</summary>
+    [Parameter] public IReadOnlyList<MoveLabel> Labels { get; set; } = [];
+    [Parameter] public IReadOnlyList<string> San { get; set; } = [];
+    [Parameter] public int Current { get; set; } = -1;
+    [Parameter] public EventCallback<int> OnPick { get; set; }
+
+    private const double W = 300, H = 70;
+    private double Step => WhiteWin.Count > 1 ? W / (WhiteWin.Count - 1) : W;
+    private double X(int ply) => WhiteWin.Count > 1 ? ply * W / (WhiteWin.Count - 1) : W / 2;
+    private static double Y(double win) => H * (1 - win / 100);
+    private static string F(double v) => v.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
+
+    private string Area
+    {
+        get
+        {
+            if (WhiteWin.Count == 0) return "";
+            var sb = new System.Text.StringBuilder($"M0,{F(H)}");
+            for (int i = 0; i < WhiteWin.Count; i++) sb.Append($" L{F(X(i))},{F(Y(WhiteWin[i]))}");
+            sb.Append($" L{F(X(WhiteWin.Count - 1))},{F(H)} Z");
+            return sb.ToString();
+        }
+    }
+
+    /// <summary>Dots for the moves worth spotting: the bad ones and the brilliant/great ones.</summary>
+    private IEnumerable<(int Ply, MoveLabel Label)> Marks => Labels
+        .Select((l, i) => (Ply: i + 1, Label: l))
+        .Where(x => x.Ply < WhiteWin.Count && x.Label is MoveLabel.Brilliant or MoveLabel.Great or MoveLabel.Mistake or MoveLabel.Miss or MoveLabel.Blunder);
+
+    private string Tip(int ply)
+    {
+        if (ply == 0) return "Start";
+        string move = ply - 1 < San.Count ? San[ply - 1] : "";
+        string num = (ply + 1) / 2 + (ply % 2 == 1 ? ". " : "… ");
+        string label = ply - 1 < Labels.Count && Labels[ply - 1] != MoveLabel.None ? $" · {Labels[ply - 1]}" : "";
+        return $"{num}{move}{label} · White {WhiteWin[ply]:0}%";
+    }
+}

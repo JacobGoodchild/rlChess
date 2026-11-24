@@ -1,24 +1,37 @@
 @using RlChess.Players
-@using RlChess.Web.Game
+@inject BotRatings Ratings
 
-@* Computer players grouped by category. Groups without players say "none yet". *@
-<div class="picker">
+@* The bot gallery: a card per computer player, grouped by category. Groups without players say "none yet". *@
+<div class="gallery">
     @foreach (var category in Enum.GetValues<PlayerCategory>())
     {
         var entries = PlayerRegistry.InCategory(category).ToList();
-        <div class="picker-group">
-            <span class="picker-cat">@CategoryName(category)</span>
-            <span class="picker-chips">
-                @if (entries.Count == 0)
-                {
-                    <span class="none-yet">none yet</span>
-                }
-                @foreach (var e in entries)
-                {
-                    <button type="button" class="chip @(e.Id == Choice.Id ? "chosen" : "")" title="@e.Description"
-                            @onclick="() => Pick(e)">@e.DisplayName</button>
-                }
-            </span>
+        <div class="gal-group">
+            <div class="gal-cat">@CategoryName(category)</div>
+            @if (entries.Count == 0)
+            {
+                <div class="none-yet">none yet</div>
+            }
+            else
+            {
+                <div class="gal-grid">
+                    @foreach (var e in entries)
+                    {
+                        bool chosen = e.Id == Choice.Id;
+                        <button type="button" class="bot-card @(chosen ? "chosen" : "")" title="@e.Description" @onclick="() => Pick(e)">
+                            <BotAvatar Entry="e" />
+                            <span class="bot-info">
+                                <span class="bot-name">@e.DisplayName @if (e.Version is not null) { <span class="ver">@e.Version</span> }</span>
+                                <span class="bot-desc">@e.Description</span>
+                                <span class="bot-meta">
+                                    <span class="rating @(RatingOf(e, chosen ? Choice.Level : null) is null ? "unrated" : "")">@RatingText(e, chosen ? Choice.Level : null)</span>
+                                    @if (e.Levels is { } r) { <span>· levels @r.Min–@r.Max</span> }
+                                </span>
+                            </span>
+                        </button>
+                    }
+                </div>
+            }
         </div>
     }
     @if (Choice.Entry.Levels is { } range)
@@ -30,12 +43,13 @@
                    @oninput="e => SetLevel(e.Value)" />
         </label>
     }
-    <div class="picker-desc">@Choice.Entry.Description</div>
 </div>
 
 @code {
     [Parameter, EditorRequired] public BotChoice Choice { get; set; } = new();
     [Parameter] public EventCallback ChoiceChanged { get; set; }
+
+    protected override async Task OnInitializedAsync() => await Ratings.LoadAsync();
 
     public static string CategoryName(PlayerCategory c) => c switch
     {
@@ -43,6 +57,11 @@
         PlayerCategory.Computer => "Computer",
         _ => "AI",
     };
+
+    private RatingsFile.Row? RatingOf(PlayerRegistry.Entry e, int? level) => Ratings.File?.Find(e, level);
+
+    private string RatingText(PlayerRegistry.Entry e, int? level) =>
+        RatingOf(e, level) is { } r ? $"rated {r.Rating:0}" : "unrated";
 
     private async Task Pick(PlayerRegistry.Entry e)
     {

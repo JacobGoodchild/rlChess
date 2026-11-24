@@ -1,0 +1,49 @@
+@* A slim bar beside the board: the white part is White's winning chances. Tap or hover for the score. *@
+<div class="eval-bar @(Orientation == Color.Black ? "flipped" : "") @(Score is null ? "waiting" : "")"
+     title="@Title" role="img" aria-label="@Title" @onclick="() => _open = !_open">
+    <div class="eval-white" style="height: @WhitePercent.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture)%"></div>
+    <div class="eval-mid"></div>
+    @if (Score is EvalScore s)
+    {
+        <span class="eval-text @(WhiteAhead ? "on-white" : "on-black")">@Short(s)</span>
+    }
+    @if (_open)
+    {
+        <div class="eval-pop">@Title</div>
+    }
+</div>
+
+@code {
+    /// <summary>The score from White's point of view (null = not known yet).</summary>
+    [Parameter] public EvalScore? Score { get; set; }
+    [Parameter] public Color Orientation { get; set; } = Color.White;
+    [Parameter] public int Depth { get; set; }
+    [Parameter] public string? Source { get; set; }
+    [Parameter] public string? Error { get; set; }
+
+    private bool _open;
+
+    private double WhitePercent => Score is EvalScore s ? Math.Clamp(s.WinPercent, 2, 98) : 50;
+    private bool WhiteAhead => Score is EvalScore s && (s.Mate is int m ? m > 0 : s.Centipawns >= 0);
+
+    private string Title => Error ?? (Score is EvalScore s
+        ? $"{Describe(s)} · {Source}{(Depth > 0 ? $", depth {Depth}" : "")}"
+        : $"{Source ?? "Engine"} is thinking…");
+
+    /// <summary>"0.3", "1.2", "M3": shown inside the bar, on the side that's better.</summary>
+    private static string Short(EvalScore s)
+    {
+        if (s.Mate is int m) return m == 0 ? "#" : $"M{Math.Abs(m)}";
+        double pawns = Math.Abs(s.Centipawns) / 100.0;
+        return pawns >= 10 ? pawns.ToString("0", System.Globalization.CultureInfo.InvariantCulture)
+                           : pawns.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture);
+    }
+
+    public static string Describe(EvalScore s)
+    {
+        if (s.Mate is int m)
+            return m == 0 ? "Checkmate" : $"{(m > 0 ? "White" : "Black")} mates in {Math.Abs(m)}";
+        if (Math.Abs(s.Centipawns) < 20) return $"About equal ({s})";
+        return $"{(s.Centipawns > 0 ? "White" : "Black")} is better ({s})";
+    }
+}

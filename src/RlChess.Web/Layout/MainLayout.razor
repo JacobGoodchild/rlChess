@@ -7,6 +7,14 @@
     @Body
     <footer class="footer">
         Pieces: @Settings.PieceSets.First(p => p.Id == Prefs.PieceSet).Credit · Sounds: Kenney (CC0) ·
+        @if (Prefs.NeedsAnalysis && Prefs.AnalysisSource == "stockfish")
+        {
+            <span>Analysis: <a href="https://stockfishchess.org" target="_blank" rel="noopener">Stockfish</a> (GPLv3) ·</span>
+        }
+        @if (Prefs.OpeningNames || Prefs.Review)
+        {
+            <span>Openings: <a href="https://github.com/lichess-org/chess-openings" target="_blank" rel="noopener">lichess</a> (CC0) ·</span>
+        }
         <a href="https://github.com/JacobGoodchild/rlChess" target="_blank" rel="noopener">Source &amp; credits</a>
     </footer>
 </div>

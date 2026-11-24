@@ -14,6 +14,11 @@
 <main class="game">
     <section class="board-col">
         @PlayerStrip(_orientation.Opponent())
+        <div class="board-row">
+        @if (Prefs.EvalBar)
+        {
+            <EvalBar Score="ShownEval" Orientation="_orientation" Depth="ShownEvalDepth" Source="@Analysis.Engine.Name" Error="@(_evalError ?? Analysis.Error)" />
+        }
         <ChessBoard Pieces="_tracker.Pieces"
                     Orientation="_orientation"
                     LastMove="ShownLastMove"
@@ -33,13 +38,20 @@
                     OnPromotion="OnPromotion"
                     OnSquareDownCallback="OnSquareDown"
                     OnSquareUpCallback="OnSquareUp"
-                    OnRightClickCallback="OnRightClick" />
+                    OnRightClickCallback="OnRightClick"
+                    BadgeSquare="ShownBadge.Square"
+                    BadgeLabel="ShownBadge.Label" />
+        </div>
         @PlayerStrip(_orientation)
     </section>
 
     <aside class="side">
         <div class="panel status-panel">
             <div class="mode">@ModeText</div>
+            @if (Prefs.OpeningNames && ShownOpening is { } opening)
+            {
+                <div class="opening" title="Opening (from lichess's public-domain list)"><span class="eco">@opening.Eco</span> @opening.Name</div>
+            }
             <div class="status @(_game.IsOver ? "over" : "") @(_computerError is null ? "" : "failed")">
                 @if (_thinking) { <span class="dots" aria-hidden="true"><i></i><i></i><i></i></span> }
                 @StatusText()
@@ -55,6 +67,11 @@
                 </div>
             }
         </div>
+
+        @if (Prefs.ShowThinking && (IsBot(Color.White) || IsBot(Color.Black)))
+        {
+            @ThinkingPanel()
+        }
 
         <div class="panel moves-panel @(_analysing ? "analysing" : "")">
             <div class="nav-buttons">
@@ -112,6 +129,11 @@
                 <button class="back-to-live" @onclick="() => ShowMain(_game.Moves.Count)">Viewing an earlier position · back to the game</button>
             }
         </div>
+
+        @if (Prefs.Review && CanReview)
+        {
+            @ReviewPanel()
+        }
 
         <div class="panel controls">
             @if (_game.IsOver && _reviewNote is null)
@@ -216,7 +238,7 @@
 
 @if (_showNewGame)
 {
-    <NewGameDialog Setup="_setup" StartFen="_dialogFen" StartFenCleared="() => _dialogFen = null" OnPlay="OnDialogPlay" OnCancel="CancelDialog" />
+    <NewGameDialog Setup="_setup" StartFen="@_dialogFen" StartFenCleared="() => _dialogFen = null" OnPlay="OnDialogPlay" OnCancel="CancelDialog" />
 }
 
 <div class="flash @(_showFlash ? "show" : "")" role="status">@_flash</div>
@@ -256,8 +278,97 @@
         }
         else
         {
-            <button class="move @(!_inVar && ply + 1 == _viewPly ? "active" : "")" @onclick="() => ShowMain(ply + 1)">@_game.SanMoves[ply]</button>
+            var label = LabelOf(ply);
+            <button class="move @(!_inVar && ply + 1 == _viewPly ? "active" : "")" @onclick="() => ShowMain(ply + 1)"
+                    title="@(label == MoveLabel.None ? null : $"{label}: {Badges.Meaning(label)}")">
+                @_game.SanMoves[ply]
+                @if (label != MoveLabel.None) { <span class="badge @Badges.Css(label)">@Badges.Glyph(label)</span> }
+            </button>
         }
+    };
+
+    private RenderFragment ThinkingPanel() => __builder =>
+    {
+        <div class="panel think-panel">
+            @if (_thinkBot is null)
+            {
+                <div class="think-quiet">The computer's thinking will show here.</div>
+            }
+            else
+            {
+                <div class="think-head">
+                    <span class="think-who">@_thinkBot</span>
+                    <span class="think-state">
+                        @if (_thinkLive) { <span class="dots" aria-hidden="true"><i></i><i></i><i></i></span> <span>thinking</span> }
+                        else { <span>last move · @FormatTook(_thinkTook)</span> }
+                    </span>
+                </div>
+                @if (_thinkInfo is { } info && _thinkPos is { } pos)
+                {
+                    <div class="think-stats">
+                        @if (info.Depth is int d) { <span>depth <b>@d</b></span> }
+                        @if (info.PositionsSearched is long n) { <span><b>@ThinkingText.Count(n)</b> positions</span> }
+                        @if (info.PositionsPerSecond is double nps) { <span><b>@ThinkingText.Count((long)nps)</b>/s</span> }
+                        @if (info.Score is EvalScore sc) { <span title="From White's point of view"><b>@sc.ForWhite(pos.SideToMove)</b></span> }
+                        @if (info.BestMove is Move bm && pos.IsLegal(bm)) { <span>best <b>@Notation.ToSan(pos, bm)</b></span> }
+                    </div>
+                    @if (ThinkingText.Line(info, pos) is { Length: > 0 } line)
+                    {
+                        <div class="think-line" title="The line it expects">line: @line</div>
+                    }
+                    @if (!string.IsNullOrWhiteSpace(info.Note)) { <div class="think-line">@info.Note</div> }
+                }
+                else
+                {
+                    <div class="think-quiet">@(_thinkReports ? "No report yet…" : $"{_thinkBot} doesn't report its thinking.")</div>
+                }
+            }
+        </div>
+    };
+
+    private RenderFragment ReviewPanel() => __builder =>
+    {
+        <div class="panel review-panel">
+            @if (_reviewing)
+            {
+                <div class="review-progress">
+                    <span>Reviewing… @_reviewDone / @_reviewTotal positions</span>
+                    <button class="text-btn" @onclick="CancelReview">Cancel</button>
+                </div>
+                <div class="progress"><i style="width: @(_reviewTotal == 0 ? 0 : 100 * _reviewDone / _reviewTotal)%"></i></div>
+            }
+            else if (_review is null)
+            {
+                <button class="btn wide" @onclick="StartReview" disabled="@(_game.Moves.Count == 0)">
+                    <svg viewBox="0 0 24 24"><path class="stroke" d="M4 19V5M4 19h16M8 15l3-4 3 2 5-6" /></svg>
+                    Review this game
+                </button>
+                @if (_reviewError is not null) { <div class="error review-error">@_reviewError</div> }
+            }
+            else
+            {
+                var r = _review;
+                <div class="review-head"><span>Game review</span><span class="review-by">by @r.Engine</span></div>
+                <div class="acc-row">
+                    <div class="acc"><span class="side-dot white"></span><span class="acc-name">@NameOf(Color.White)</span><b>@r.WhiteAccuracy.ToString("0.0")%</b></div>
+                    <div class="acc"><span class="side-dot black"></span><span class="acc-name">@NameOf(Color.Black)</span><b>@r.BlackAccuracy.ToString("0.0")%</b></div>
+                </div>
+                <EvalGraph WhiteWin="r.WhiteWin" Labels="r.Moves.Select(m => m.Label).ToList()" San="_game.SanMoves"
+                           Current="@(_inVar ? -1 : _viewPly)" OnPick="ply => ShowMain(ply)" />
+                <table class="label-table">
+                    @foreach (var l in Badges.Order)
+                    {
+                        int w = r.Count(Color.White, l), b = r.Count(Color.Black, l);
+                        if (w + b == 0) continue;
+                        <tr title="@Badges.Meaning(l)">
+                            <td class="lc">@w</td>
+                            <td class="ln"><span class="badge @Badges.Css(l)">@Badges.Glyph(l)</span> @l</td>
+                            <td class="lc">@b</td>
+                        </tr>
+                    }
+                </table>
+            }
+        </div>
     };
 
     private RenderFragment Variation() => __builder =>

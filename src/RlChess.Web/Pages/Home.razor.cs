@@ -21,6 +21,8 @@ public partial class Home : IAsyncDisposable
     [Inject] private AppState State { get; set; } = default!;
     [Inject] private GameHistory History { get; set; } = default!;
     [Inject] private NavigationManager Nav { get; set; } = default!;
+    [Inject] private Analysis Analysis { get; set; } = default!;
+    [Inject] private Openings Openings { get; set; } = default!;
 
     // ------------------------------------------------------------------ game & seats
     private GameSetup _setup = new();                 // last choices in the dialog (remembered)
@@ -75,6 +77,28 @@ public partial class Home : IAsyncDisposable
     private string? _whiteName, _blackName;           // names from a loaded/reviewed game
     private string? _reviewNote;                      // e.g. "From your games" (shown instead of the mode)
 
+    // ------------------------------------------------------------------ advanced: bot thinking
+    private string? _thinkBot;                        // the computer whose thinking is shown
+    private Position? _thinkPos;                      // the position it was thinking about
+    private SearchInfo? _thinkInfo;                   // its latest report (null = none)
+    private SearchInfo? _thinkShown;                  // the report last drawn (to redraw only on change)
+    private bool _thinkLive, _thinkReports;
+    private TimeSpan _thinkTook;
+
+    // ------------------------------------------------------------------ advanced: evaluation bar
+    private string? _evalFen;                         // position the bar's analysis is for
+    private EvalScore? _evalWhite;
+    private int _evalDepth;
+    private string? _evalError;
+    private CancellationTokenSource? _evalCts;
+
+    // ------------------------------------------------------------------ advanced: game review
+    private GameReviewResult? _review;
+    private bool _reviewing;
+    private int _reviewDone, _reviewTotal;
+    private string? _reviewError;
+    private CancellationTokenSource? _reviewCts;
+
     // ------------------------------------------------------------------ UI bits
     private bool _showNewGame;
     private string? _dialogFen;                       // the new-game dialog starts from this position
@@ -106,6 +130,8 @@ public partial class Home : IAsyncDisposable
         if (firstRender)
         {
             await Prefs.LoadAsync();
+            Prefs.Changed += OnPrefsChanged;
+            OnPrefsChanged();
             _self = DotNetObjectReference.Create(this);
             _keys = await _module!.InvokeAsync<IJSObjectReference>("attachKeys", _self);
             _setup = GameSetup.Deserialize(await Prefs.Get("setup"));
@@ -139,6 +165,7 @@ public partial class Home : IAsyncDisposable
         {
             await _module.InvokeVoidAsync("scrollMoveIntoView", _moveListEl);
             if (_game.IsOver && !_historySaved) await SaveToHistory();
+            MaybeStartEval();
         }
     }
 
@@ -150,6 +177,11 @@ public partial class Home : IAsyncDisposable
         if (!_historySaved && _game.Moves.Count > 0) _ = SaveToHistory();
         AbandonPendingWork();
         _historySaved = existing is not null; // loaded games are already saved somewhere
+        CancelReview();
+        _review = null;
+        _reviewError = null;
+        _thinkBot = null;
+        _thinkInfo = null;
         _whiteName = _blackName = null;
         _reviewNote = null;
         _mode = setup.Mode;
@@ -223,6 +255,7 @@ public partial class Home : IAsyncDisposable
         _whiteName = r.White;
         _blackName = r.Black;
         _reviewNote = r.Note;
+        _review = Analysis.Reviews.GetValueOrDefault(Analysis.GameKey(_game));
     }
 
     /// <summary>Puts back the game that was on this page before visiting another page.</summary>
@@ -244,6 +277,7 @@ public partial class Home : IAsyncDisposable
         _computerError = null;
         _tracker.Reset(_game.Position);
         ShowMain(_game.Moves.Count, animate: false, sound: false);
+        _review = Analysis.Reviews.GetValueOrDefault(Analysis.GameKey(_game));
         if (_clock is not null && _game.Moves.Count > 0 && !_game.IsOver && !_paused) _clock.Start(_game.SideToMove);
         ScheduleNext();
     }
@@ -320,6 +354,7 @@ public partial class Home : IAsyncDisposable
             TimeSpan? limit = _clock is { IsRunning: true } ? _clock.Remaining(side) : _clock is null ? ThinkLimit : null;
             using var thinkCts = CancellationTokenSource.CreateLinkedTokenSource(token);
             var sw = Stopwatch.StartNew();
+            StartThinking(side, bot, sw);
             Task<Move> task;
             try { task = bot.ChooseMoveAsync(_game.Position.Clone(), thinkCts.Token); }
             catch (Exception e) when (e is not OperationCanceledException) { task = Task.FromException<Move>(e); }
@@ -372,8 +407,159 @@ public partial class Home : IAsyncDisposable
         finally
         {
             if (generation == _generation) _thinking = false;
+            StopThinking(bot);
         }
         StateHasChanged();
+    }
+
+    // ================================================================== advanced: bot thinking
+
+    private void StartThinking(Color side, IPlayer bot, Stopwatch sw)
+    {
+        _thinkBot = _botLabels[(int)side];
+        _thinkPos = _game.Position.Clone();
+        _thinkInfo = null;
+        _thinkLive = true;
+        _thinkReports = bot is IReportsThinking;
+        if (bot is IReportsThinking reporter) reporter.Report = info => { _thinkInfo = info with { Elapsed = sw.Elapsed }; };
+        _thinkStarted = sw;
+    }
+
+    private Stopwatch? _thinkStarted;
+
+    private void StopThinking(IPlayer bot)
+    {
+        if (bot is IReportsThinking reporter) reporter.Report = null;
+        if (_thinkLive) _thinkTook = _thinkStarted?.Elapsed ?? TimeSpan.Zero;
+        _thinkLive = false;
+    }
+
+    private static string FormatTook(TimeSpan t) => t.TotalSeconds < 1 ? $"{t.TotalMilliseconds:0} ms" : $"{t.TotalSeconds:0.0} s";
+
+    // ================================================================== advanced: evaluation bar & openings
+
+    private void OnPrefsChanged()
+    {
+        if (Prefs.OpeningNames || Prefs.Review) _ = Openings.LoadAsync().ContinueWith(_ => InvokeAsync(StateHasChanged));
+        if (!Prefs.EvalBar) { _evalCts?.Cancel(); _evalFen = null; }
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    private OpeningBook.Opening? ShownOpening
+    {
+        get
+        {
+            if (Openings.Book is not { } book) return null;
+            int ply = _inVar ? _varBase : _viewPly;
+            if (_openingCache is { } c && c.Game == _game && c.Count == _game.Moves.Count && c.Ply == ply) return c.Opening;
+            var o = book.NameAt(_game, ply);
+            _openingCache = (_game, _game.Moves.Count, ply, o);
+            return o;
+        }
+    }
+
+    private (ChessGame Game, int Count, int Ply, OpeningBook.Opening? Opening)? _openingCache;
+
+    /// <summary>The bar's score: from the game review when it covers this position, else the live analysis.</summary>
+    private EvalScore? ShownEval => ReviewCoversShown ? _review!.WhiteScore(_game, _viewPly) : _evalWhite;
+
+    private int ShownEvalDepth => ReviewCoversShown ? 0 : _evalDepth;
+
+    private bool ReviewCoversShown => _review is not null && !_inVar && _review.Evals.Count == _game.Moves.Count + 1;
+
+    /// <summary>Starts analysing the shown position for the bar, if it changed (stopping the previous one).</summary>
+    private void MaybeStartEval()
+    {
+        if (!Prefs.EvalBar || _reviewing || ReviewCoversShown) return;
+        var fen = _shown.ToFen();
+        if (fen == _evalFen) return;
+        _evalFen = fen;
+        _evalCts?.Cancel();
+        var cts = _evalCts = new CancellationTokenSource();
+        _evalWhite = null;
+        _evalDepth = 0;
+        _evalError = null;
+        _ = RunEval(_shown.Clone(), cts);
+    }
+
+    private async Task RunEval(Position position, CancellationTokenSource cts)
+    {
+        var engine = Analysis.Engine;
+        try
+        {
+            var final = await engine.AnalyseAsync(position, Analysis.LimitFor(review: false), e =>
+            {
+                if (_evalCts != cts) return;
+                _evalWhite = e.Score.ForWhite(position.SideToMove);
+                _evalDepth = (engine as StockfishEngine)?.Depth ?? 0;
+                _ = InvokeAsync(StateHasChanged);
+            }, cts.Token);
+            if (_evalCts == cts)
+            {
+                _evalWhite = final.Score.ForWhite(position.SideToMove);
+                _evalDepth = (engine as StockfishEngine)?.Depth ?? _evalDepth;
+            }
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception e) when (_evalCts == cts)
+        {
+            _evalError = e.Message;
+        }
+        if (_evalCts == cts) StateHasChanged();
+    }
+
+    // ================================================================== advanced: game review
+
+    /// <summary>Review is offered for finished games and for games opened from Games/Arena/PGN.</summary>
+    private bool CanReview => _game.Moves.Count > 0 && (_game.IsOver || _reviewNote is not null);
+
+    private MoveLabel LabelOf(int ply) =>
+        _review is { } r && ply < r.Moves.Count && r.Moves.Count == _game.Moves.Count ? r.Moves[ply].Label : MoveLabel.None;
+
+    private (int Square, MoveLabel Label) ShownBadge =>
+        !_inVar && _viewPly > 0 && LabelOf(_viewPly - 1) is var l && l != MoveLabel.None ? (_game.Moves[_viewPly - 1].To, l) : (-1, MoveLabel.None);
+
+    private async Task StartReview()
+    {
+        if (_reviewing || _game.Moves.Count == 0) return;
+        _evalCts?.Cancel();
+        _evalFen = null;
+        _reviewing = true;
+        _reviewError = null;
+        _reviewDone = 0;
+        _reviewTotal = _game.Moves.Count + 1;
+        var cts = _reviewCts = new CancellationTokenSource();
+        var game = _game;
+        StateHasChanged();
+        try
+        {
+            var book = await Openings.LoadAsync();
+            var result = await GameReviewer.Run(game, Analysis.Engine, Analysis.LimitFor(review: true), book, (done, total) =>
+            {
+                _reviewDone = done;
+                _reviewTotal = total;
+                _ = InvokeAsync(StateHasChanged);
+            }, cts.Token);
+            Analysis.Reviews[Analysis.GameKey(game)] = result;
+            if (_game == game) _review = result;
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception e)
+        {
+            _reviewError = e.Message;
+            Console.WriteLine($"[rlChess] Review failed: {e}");
+        }
+        finally
+        {
+            if (_reviewCts == cts) _reviewing = false;
+        }
+        StateHasChanged();
+    }
+
+    private void CancelReview()
+    {
+        _reviewCts?.Cancel();
+        _reviewing = false;
     }
 
     private void OutOfTime(Color side, bool thinkLimit)
@@ -400,6 +586,11 @@ public partial class Home : IAsyncDisposable
             {
                 if (_clock is { Running: Color side } c && c.IsFlagged(side) && !_game.IsOver)
                     OutOfTime(side, thinkLimit: false);
+                if (Prefs.ShowThinking && _thinkInfo != _thinkShown)
+                {
+                    _thinkShown = _thinkInfo;
+                    StateHasChanged();
+                }
             }
         }
         catch (ObjectDisposedException) { }
@@ -1070,6 +1261,9 @@ public partial class Home : IAsyncDisposable
             };
         _disposed = true;
         _cts.Cancel();
+        _evalCts?.Cancel();
+        _reviewCts?.Cancel();
+        Prefs.Changed -= OnPrefsChanged;
         _flagTimer?.Dispose();
         try
         {

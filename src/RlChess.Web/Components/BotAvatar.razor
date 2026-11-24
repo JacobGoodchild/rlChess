@@ -1,0 +1,44 @@
+@using RlChess.Players
+
+@* A simple generated avatar: initials on a colour picked from the bot's id, with a small mark for its category. *@
+<svg class="bot-avatar" viewBox="0 0 40 40" aria-hidden="true">
+    <circle cx="20" cy="20" r="20" fill="hsl(@Hue, 42%, 42%)" />
+    @switch (Entry.Category)
+    {
+        case PlayerCategory.Random:
+            <g fill="rgba(255,255,255,.18)"><circle cx="9" cy="10" r="2.2" /><circle cx="31" cy="30" r="2.2" /><circle cx="31" cy="10" r="2.2" /><circle cx="9" cy="30" r="2.2" /></g>
+            break;
+        case PlayerCategory.Computer:
+            <path d="M6 14h28M6 26h28M14 6v28M26 6v28" stroke="rgba(255,255,255,.14)" stroke-width="1.5" />
+            break;
+        default:
+            <g fill="none" stroke="rgba(255,255,255,.16)" stroke-width="1.5"><circle cx="20" cy="20" r="9" /><circle cx="20" cy="20" r="15" /></g>
+            break;
+    }
+    <text x="20" y="25.5" text-anchor="middle" font-size="15" font-weight="700" fill="#fff" font-family="system-ui, sans-serif">@Initials</text>
+</svg>
+
+@code {
+    [Parameter, EditorRequired] public PlayerRegistry.Entry Entry { get; set; } = default!;
+
+    private int Hue
+    {
+        get
+        {
+            // A stable hash (string.GetHashCode changes between runs).
+            uint h = 2166136261;
+            foreach (char ch in Entry.Id) h = (h ^ ch) * 16777619;
+            return (int)(h % 360);
+        }
+    }
+
+    private string Initials
+    {
+        get
+        {
+            var words = Entry.DisplayName.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            var s = words.Length >= 2 ? $"{words[0][0]}{words[1][0]}" : Entry.DisplayName.Length >= 2 ? Entry.DisplayName[..2] : Entry.DisplayName;
+            return s.Length > 1 ? char.ToUpperInvariant(s[0]) + s[1..] : s.ToUpperInvariant();
+        }
+    }
+}

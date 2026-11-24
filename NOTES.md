@@ -2,7 +2,7 @@
 
 Read this first. It's the hand-over log between work sessions.
 
-## Status (end of session 3)
+## Status (end of session 4)
 
 ### Engine (`src/RlChess.Engine`)
 - 64-square board with pre-computed tables; pseudo-legal generation + legality filter with a
@@ -82,6 +82,39 @@ Read this first. It's the hand-over log between work sessions.
 - Local testing of other pages: python's http.server doesn't serve 404.html for deep links, so
   navigate with the page links (GitHub Pages does serve 404.html, so deep links work live).
 
+### Session 4 additions (brief "session 3")
+- **Advanced menu**: Settings → Advanced (collapsible) with switches stored as `rlchess.adv.*`
+  (`Prefs.ShowThinking/EvalBar/Review/OpeningNames/AnalysisSource`). All off by default; with all off,
+  nothing extra renders or downloads (checked).
+- **Thinking**: `SearchInfo` + `IReportsThinking` (engine/Players). Home sets `Report` in `RunBotTurn`
+  (`StartThinking/StopThinking`), the 100 ms watcher redraws when the report changes. Arena
+  `--thinking` (forces 1 thread) via `MatchRunner.PlayGame(onMove:)`; text by `ThinkingText`.
+- **Gallery**: `PlayerPicker` is now cards + `BotAvatar` (generated hue from id, initials,
+  category pattern). `Entry.Version`, `Entry.Spec(level)` ("id" or "id:level").
+- **Versions**: `tools/freeze-bot.py <Name> <version>` copies `Players/Bots/<Name>` →
+  `Players/Frozen/<Name>_<version>` renaming the namespace. Tested end to end in a scratch copy
+  (freeze, register, build, rate).
+- **Ratings**: `Ratings.Compute` (max-likelihood Elo, one virtual draw per pairing as a prior,
+  anchor Random = 400). Arena `ratings` writes `wwwroot/ratings.json` (`RatingsFile`, JSON via
+  Utf8JsonWriter/JsonDocument: trimming-safe). Website loads it with `BotRatings`. The committed file
+  only has Random (400) until the owner has bots.
+- **Analysis**: `IAnalysisEngine` (engine) with `PlayerAnalysis` (a bot that reports a Score) and
+  `Services/StockfishEngine` (UCI over `wwwroot/js/engine.js`: a blob worker that `importScripts`
+  stockfish-19-lite-single.js from jsDelivr, wasm URL passed after `#`). One analysis at a time
+  (SemaphoreSlim); cancel = `stop` then wait for `bestmove`. `Services/Analysis` picks the source.
+  The sandbox can't reach jsDelivr: local/live tests serve the identical npm files via Playwright
+  `page.route` (files in the scratchpad `sf/`, downloaded from unpkg).
+- **Eval bar**: `Components/EvalBar.razor`; Home's `MaybeStartEval` (after each render) analyses the
+  shown position if it changed; uses the review's evals when a review covers the position.
+- **Review**: `MoveReview` (labels, accuracy, `IsSacrifice`), `GameReviewer` (Services), UI in
+  Home (`ReviewPanel`, badges in `MoveCell`, `ChessBoard.BadgeSquare/BadgeLabel`, `EvalGraph`).
+  Reviews cached per game in `Analysis.Reviews`. Offered when the game is over or was opened from
+  Games/Arena/PGN/editor.
+- **Openings**: `OpeningBook` (engine); `wwwroot/openings.tsv` built by Arena `openings` from lichess's
+  a–e.tsv (CC0). Loaded lazily by `Services/Openings`.
+- Fixed: the new-game dialog's "Starting from your set-up position" note showed every time
+  (a string parameter was passed without `@`, so it got the literal text).
+
 ## Decisions / gotchas
 - Work straight on `main`; only push green builds.
 - Licences: repo MIT. Pieces: Cburnett (BSD option, verified on Commons), Fantasy/Spatial
@@ -99,6 +132,8 @@ Read this first. It's the hand-over log between work sessions.
   Playwright suite if the UI keeps growing.
 
 ## Ideas / next steps
+- Possible: review labels for variations; a "Retry this move" mode after review; showing Stockfish's
+  best move as an arrow; rating several levels automatically.
 - Owner asked to hold off on: puzzle test sets, opening-book starts for the Arena, online play,
   variants, installable app.
 - Owner: minimax player (Computer category, level = depth), then RL player (AI category).
