@@ -267,7 +267,7 @@ public partial class Home : IAsyncDisposable
                 throw new InvalidOperationException($"it chose an illegal move ({move.ToUci()}) in {_game.Position.ToFen()}");
 
             _thinking = false;
-            PlayMove(move, animate: true);
+            PlayMove(move, animate: true, keepSelection: true);
             ScheduleNext();
         }
         catch (OperationCanceledException)
@@ -317,8 +317,13 @@ public partial class Home : IAsyncDisposable
         catch (ObjectDisposedException) { }
     }
 
-    private void PlayMove(Move move, bool animate)
+    /// <param name="keepSelection">
+    /// For moves the person didn't just make (computer replies, premoves being played): keep any piece
+    /// they're selecting or dragging, so a premove in progress isn't interrupted.
+    /// </param>
+    private void PlayMove(Move move, bool animate, bool keepSelection = false)
     {
+        int keep = keepSelection ? _selected : -1;
         if (!IsLive) ShowMain(_game.Moves.Count, animate: false, sound: false);
         var mover = _game.SideToMove;
         var before = _game.Position.Clone();
@@ -329,6 +334,8 @@ public partial class Home : IAsyncDisposable
         _animate = animate;
         _fenInput = _shown.ToFen();
         ClearSelection();
+        // Re-select the piece (with fresh destinations: real moves if it's now their turn, else premoves).
+        if (keep >= 0 && MovableColor is Color mine && _shown[keep].IsColor(mine)) Select(keep);
 
         if (_clock is not null)
         {
@@ -351,7 +358,7 @@ public partial class Home : IAsyncDisposable
         var promo = piece.Type() == PieceType.Pawn && Square.Rank(to) is 0 or 7 ? PieceType.Queen : PieceType.None;
         if (piece.IsColor(_game.SideToMove) && _game.Position.TryFindLegalMove(from, to, promo, out var move))
         {
-            PlayMove(move, animate: true);
+            PlayMove(move, animate: true, keepSelection: true);
             ScheduleNext();
         }
         // Otherwise it's silently dropped.

@@ -43,7 +43,8 @@ Read this first. It's the hand-over log between work sessions.
   in Home detects flag falls.
 - Premoves (vs computer only): movement-pattern destinations (`Game/Premoves.cs`, like lichess),
   auto-queen on promotion, played instantly if legal else dropped; right-click or empty-square
-  click cancels.
+  click cancels. A selection or drag in progress survives the computer's move (`keepSelection`):
+  its dots switch to real moves if it's now the player's turn, so premove chains aren't interrupted.
 - Analysis: one variation at a time, branching from any main-line position; shown under the
   main-line row it replaces. Pauses vs-computer games; disabled mid-game with a clock.
 - Draw offers in two-player games (moving instead of answering declines).
