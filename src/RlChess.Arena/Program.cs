@@ -10,6 +10,23 @@ using ChessGame = RlChess.Engine.Game;
 //
 // Players are looked up by id in PlayerRegistry (see src/RlChess.Engine/Players/PlayerRegistry.cs).
 
+// "perft <depth> [fen]": count move sequences (checks move generation and measures speed).
+if (args.Length >= 2 && args[0] == "perft")
+{
+    int depth = int.Parse(args[1]);
+    var position = Position.FromFen(args.Length > 2 ? string.Join(' ', args[2..]) : Position.StartFen);
+    var timer = Stopwatch.StartNew();
+    long total = 0;
+    foreach (var (move, nodes) in Perft.Divide(position, depth))
+    {
+        Console.WriteLine($"  {move.ToUci(),-6} {nodes,14:N0}");
+        total += nodes;
+    }
+    timer.Stop();
+    Console.WriteLine($"perft({depth}) = {total:N0} in {timer.Elapsed.TotalSeconds:F2} s ({total / Math.Max(timer.Elapsed.TotalSeconds, 1e-9) / 1e6:F1} M positions/sec)");
+    return 0;
+}
+
 int games = 100;
 string p1Id = "random", p2Id = "random";
 string? pgnPath = null;
@@ -162,6 +179,8 @@ static void PrintHelp()
 {
     Console.WriteLine("""
         rlChess Arena - play many games between two players.
+
+        Also: perft <depth> [fen]   count all move sequences to <depth> (speed/correctness check)
 
         Options:
           -n, --games <N>     number of games (default 100)

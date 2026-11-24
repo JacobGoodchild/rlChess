@@ -40,6 +40,9 @@ dotnet run --project src/RlChess.Web
 dotnet run --project src/RlChess.Arena -c Release -- --games 1000 --p1 random --p2 random --pgn games.pgn --threads all
 ```
 
+Speed/correctness check of the move generator: `dotnet run --project src/RlChess.Arena -c Release -- perft 5`
+(optionally followed by a FEN).
+
 Arena options: `--games`, `--p1`, `--p2`, `--pgn <file>`, `--fen <start position>`, `--max-plies`,
 `--seed` (reproducible random players) and `--threads` (a number, or `all` for every CPU core).
 
