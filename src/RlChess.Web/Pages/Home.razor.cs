@@ -33,6 +33,23 @@ public partial class Home : IAsyncDisposable
 
     // --- UI bits
     private bool _muted;
+    private bool _showThemes;
+    private string _boardTheme = "brown";
+
+    private static readonly (string Name, string Light, string Dark)[] BoardThemes =
+    [
+        ("brown", "#ecd9b9", "#ae8968"),
+        ("blue", "#dee3e6", "#8ca2ad"),
+        ("green", "#eeeed2", "#769656"),
+        ("grey", "#e2e2e0", "#a4a39f"),
+    ];
+
+    private async Task SetBoardTheme(string name)
+    {
+        _boardTheme = name;
+        _showThemes = false;
+        await SaveSetting("board", name);
+    }
     private bool _showNewGame;
     private bool _showFlash;
     private string _flash = "";
@@ -65,6 +82,8 @@ public partial class Home : IAsyncDisposable
             await _module.InvokeVoidAsync("preloadSounds", (object)new[] { "move", "capture", "check", "gameover" });
 
             _muted = await _module.InvokeAsync<string?>("getSetting", "muted") == "1";
+            var savedBoard = await _module.InvokeAsync<string?>("getSetting", "board");
+            if (BoardThemes.Any(t => t.Name == savedBoard)) _boardTheme = savedBoard!;
             var savedOpponent = await _module.InvokeAsync<string?>("getSetting", "opponent");
             var savedColor = await _module.InvokeAsync<string?>("getSetting", "color");
             _opponent = PlayerOption.Find(savedOpponent);
@@ -228,7 +247,7 @@ public partial class Home : IAsyncDisposable
             case "ArrowUp": case "Home": GoToPly(0); break;
             case "ArrowDown": case "End": GoToPly(_game.Moves.Count); break;
             case "f": Flip(); break;
-            case "Escape": ClearSelection(); _pendingPromotion = null; _showNewGame = false; break;
+            case "Escape": ClearSelection(); _pendingPromotion = null; _showNewGame = false; _showThemes = false; break;
         }
         StateHasChanged();
         return Task.CompletedTask;

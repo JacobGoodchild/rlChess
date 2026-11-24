@@ -5,13 +5,28 @@
 
 <PageTitle>rlChess</PageTitle>
 
-<div class="app">
+<div class="app board-theme-@_boardTheme">
     <header class="topbar">
         <a class="brand" href="./" @onclick="() => { }" @onclick:preventDefault="true">
             <span class="brand-mark" aria-hidden="true"></span><span>rl<b>Chess</b></span>
         </a>
         <nav class="topnav">
             <button class="btn primary" @onclick="() => _showNewGame = true">New game</button>
+            <div class="theme-picker">
+                <button class="icon-btn" title="Board colours" aria-label="Board colours" @onclick="() => _showThemes = !_showThemes">
+                    <svg viewBox="0 0 24 24"><path d="M4 4h7v7H4zM13 13h7v7h-7z" /><path d="M13 4h7v7h-7zM4 13h7v7H4z" opacity=".35" /></svg>
+                </button>
+                @if (_showThemes)
+                {
+                    <div class="theme-menu">
+                        @foreach (var (name, light, dark) in BoardThemes)
+                        {
+                            <button class="swatch @(name == _boardTheme ? "chosen" : "")" title="@name" style="--a: @light; --b: @dark"
+                                    @onclick="() => SetBoardTheme(name)"></button>
+                        }
+                    </div>
+                }
+            </div>
             <button class="icon-btn" title="@(_muted ? "Sound off" : "Sound on")" aria-label="Toggle sound" @onclick="ToggleMute">
                 @if (_muted)
                 {
