@@ -47,7 +47,7 @@ Arena options: `--games`, `--p1`, `--p2`, `--pgn <file>`, `--fen <start position
 `--seed` (reproducible random players) and `--threads` (a number, or `all` for every CPU core).
 
 The fast tests take about a second. The slow ones are deep perft runs (~600 million positions, about
-30 seconds). Every push to `main` builds, runs the fast tests and deploys the website.
+10 seconds). Every push to `main` builds, runs the fast tests and deploys the website.
 
 ## How to add your own player
 

@@ -312,15 +312,13 @@ public sealed class Position
     public int GenerateLegalMoves(Span<Move> moves)
     {
         int n = GeneratePseudoLegalMoves(moves);
-        int legal = 0;
         var us = SideToMove;
+        bool inCheck = IsInCheck;
+        ulong pinned = PinnedPieces(us);
+        int legal = 0;
         for (int i = 0; i < n; i++)
         {
-            var m = moves[i];
-            MakeMoveInternal(m, updateHash: false);
-            bool ok = !IsSquareAttacked(_kingSquare[(int)us], us.Opponent());
-            UnmakeMoveInternal();
-            if (ok) moves[legal++] = m;
+            if (IsPseudoLegalMoveLegal(moves[i], us, inCheck, pinned)) moves[legal++] = moves[i];
         }
         return legal;
     }
@@ -331,14 +329,56 @@ public sealed class Position
         Span<Move> moves = stackalloc Move[MaxMoves];
         int n = GeneratePseudoLegalMoves(moves);
         var us = SideToMove;
+        bool inCheck = IsInCheck;
+        ulong pinned = PinnedPieces(us);
         for (int i = 0; i < n; i++)
         {
-            MakeMoveInternal(moves[i], updateHash: false);
-            bool ok = !IsSquareAttacked(_kingSquare[(int)us], us.Opponent());
-            UnmakeMoveInternal();
-            if (ok) return true;
+            if (IsPseudoLegalMoveLegal(moves[i], us, inCheck, pinned)) return true;
         }
         return false;
+    }
+
+    /// <summary>
+    /// Does this pseudo-legal move leave our king safe? Shortcut: when we're not in check, a move by
+    /// a piece that isn't the king, isn't pinned and isn't en passant can't expose the king, so it's
+    /// legal without trying it. Everything else is played on the board and checked.
+    /// </summary>
+    private bool IsPseudoLegalMoveLegal(Move m, Color us, bool inCheck, ulong pinned)
+    {
+        if (!inCheck && !m.IsEnPassant && m.From != _kingSquare[(int)us] && (pinned & (1UL << m.From)) == 0)
+            return true;
+        MakeMoveInternal(m, updateHash: false);
+        bool ok = !IsSquareAttacked(_kingSquare[(int)us], us.Opponent());
+        UnmakeMoveInternal();
+        return ok;
+    }
+
+    /// <summary>Bit mask of our pieces that stand between our king and an enemy rook/bishop/queen.</summary>
+    private ulong PinnedPieces(Color us)
+    {
+        ulong pinned = 0;
+        int king = _kingSquare[(int)us];
+        var them = us.Opponent();
+        var queen = PieceType.Queen.Of(them);
+        for (int dir = 0; dir < 8; dir++)
+        {
+            var slider = (dir < 4 ? PieceType.Rook : PieceType.Bishop).Of(them);
+            int candidate = -1;
+            foreach (int sq in Tables.Rays[dir, king])
+            {
+                var p = _board[sq];
+                if (p == Piece.None) continue;
+                if (candidate < 0)
+                {
+                    if (p.Color() != us) break; // first piece is an enemy: no pin on this line
+                    candidate = sq;
+                    continue;
+                }
+                if (p == queen || p == slider) pinned |= 1UL << candidate;
+                break;
+            }
+        }
+        return pinned;
     }
 
     /// <summary>Is <paramref name="move"/> one of the legal moves here? (Matches from, to and promotion.)</summary>

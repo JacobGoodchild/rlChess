@@ -11,14 +11,16 @@ Done and working:
   (PGN import: skips comments, variations, NAGs), `Position.ToAscii()`, all end-of-game rules.
   FEN loading rejects impossible positions (pawns on back ranks, side not to move in check).
   Perft matches every standard position (start, Kiwipete, positions 3-6) at the depths in
-  `PerftTests.cs`. Roughly 20M positions/sec in perft on the dev container.
+  `PerftTests.cs`. Legality shortcut: when not in check, moves by unpinned non-king pieces (and not
+  en passant) skip the make/check/undo test. ~50M positions/sec in `perft 6` on the dev container
+  (`dotnet run --project src/RlChess.Arena -c Release -- perft 6`).
 - **Players**: `IPlayer`, optional `IAsyncPlayer` (for slow players on the website),
   `RandomPlayer` (optional seed), `PlayerRegistry` (one line per player → shows on website + Arena),
   `MatchRunner.PlayGame`.
 - **Arena** (`src/RlChess.Arena`): `--games --p1 --p2 --pgn --fen --max-plies --seed --threads`.
-  Random vs random on the 4-core dev container: ~410 games/sec on one thread, ~1050 with
+  Random vs random on the 4-core dev container: ~530 games/sec on one thread, ~1050+ with
   `--threads all`; slower (~650) with `--pgn` because move names (SAN) are then recorded.
-  Seeded runs give identical results whatever the thread count. Each worker thread gets its own
+  Seeded runs give identical results whatever the thread count. Prints an Elo-difference estimate. Each worker thread gets its own
   player objects, so players needn't be thread-safe.
 - **Website** (`src/RlChess.Web`): play vs Random (choose colour) or two players on one device;
   drag-and-drop and click-click, legal-move dots, last move, check highlight; promotion picker;
@@ -56,6 +58,5 @@ Done and working:
 
 - Owner's own work: minimax/alpha-beta player, then RL player (not ours to write).
 - Possible polish: premoves, piece-set picker, "download PGN" button, clocks, a resign/draw button.
-- Arena: an Elo-difference estimate (with error bars) in the summary.
 - A faster (bitboard) move generator later if RL training needs more speed; perft tests make
   swapping the internals safe.
