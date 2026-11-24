@@ -128,9 +128,13 @@ start/end, `f` flips the board, Esc cancels. The square icon at the top switches
 ## Credits & licences
 
 - Code: [MIT](LICENSE).
-- Chess pieces: by [Colin M.L. Burnett](https://commons.wikimedia.org/wiki/User:Cburnett), from
-  Wikimedia Commons, used under the BSD licence (one of the licences the author offers). See
-  [`src/RlChess.Web/wwwroot/pieces/cburnett/LICENSE.md`](src/RlChess.Web/wwwroot/pieces/cburnett/LICENSE.md).
+- Chess pieces (each folder in `src/RlChess.Web/wwwroot/pieces/` has its licence file):
+  - **Classic**: by [Colin M.L. Burnett](https://commons.wikimedia.org/wiki/User:Cburnett), from
+    Wikimedia Commons, used under the BSD licence (one of the licences the author offers).
+  - **Fantasy** and **Spatial**: from [Chess Art](https://github.com/maurimo/chess-art) by
+    Maurizio Monge, MIT licence.
+  - **Chessnut**: by [Alexis Luengas](https://github.com/LexLuengas/chessnut-pieces), Apache
+    License 2.0.
 - Sounds: wooden knocks from [Impact Sounds](https://kenney.nl/assets/impact-sounds) by
   [Kenney](https://www.kenney.nl), public domain (CC0); trimmed and mixed by `tools/make-sounds.sh`.
 - Perft reference numbers: [Chess Programming Wiki](https://www.chessprogramming.org/Perft_Results).

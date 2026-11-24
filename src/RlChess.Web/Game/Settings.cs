@@ -15,6 +15,9 @@ public static class Settings
     public static readonly (string Id, string Name, string Credit)[] PieceSets =
     [
         ("cburnett", "Classic", "Colin M.L. Burnett (BSD)"),
+        ("fantasy", "Fantasy", "Maurizio Monge (MIT)"),
+        ("spatial", "Spatial", "Maurizio Monge (MIT)"),
+        ("chessnut", "Chessnut", "Alexis Luengas (Apache 2.0)"),
     ];
 
     public static readonly TimeSpan?[] ThinkLimits =
