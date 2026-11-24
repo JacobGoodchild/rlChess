@@ -451,16 +451,15 @@ public partial class Home : IAsyncDisposable
         if (_game.IsOver)
         {
             var r = _game.Result;
-            return r.Outcome switch
-            {
-                GameOutcome.WhiteWins => "White is victorious",
-                GameOutcome.BlackWins => "Black is victorious",
-                _ => "Draw",
-            };
+            if (r.Outcome == GameOutcome.Draw) return $"{r.ReasonText} · draw";
+            var winner = r.Outcome == GameOutcome.WhiteWins ? Color.White : Color.Black;
+            if (VsComputer) return winner == _humanColor ? $"{r.ReasonText} · you won!" : $"{r.ReasonText} · {_computer?.Name ?? "computer"} wins";
+            return $"{r.ReasonText} · {(winner == Color.White ? "White" : "Black")} wins";
         }
         if (_thinking) return $"{_computer?.Name ?? "Computer"} is thinking…";
-        if (VsComputer) return _game.SideToMove == _humanColor ? "Your turn" : "Waiting for computer";
-        return _game.SideToMove == Color.White ? "White to play" : "Black to play";
+        var check = _game.Position.IsInCheck ? " · check!" : "";
+        if (VsComputer) return (_game.SideToMove == _humanColor ? "Your turn" : "Waiting for computer") + check;
+        return (_game.SideToMove == Color.White ? "White to play" : "Black to play") + check;
     }
 
     private IEnumerable<(int Number, int WhitePly, int BlackPly)> MoveRows()

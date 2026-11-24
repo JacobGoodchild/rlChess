@@ -5,6 +5,8 @@ computer players (minimax, and later a reinforcement-learning player trained by 
 
 **Play it:** https://jacobgoodchild.github.io/rlChess/
 
+![The rlChess website mid-game](docs/screenshot.png)
+
 ## What's in here
 
 | Folder | What it is |
@@ -84,6 +86,12 @@ Handy engine calls: `position.GetLegalMoves()`, `MakeMove`/`UndoMove`, `IsInChec
 **Slow players on the website:** the browser runs everything on one thread, so a player that thinks
 for several seconds freezes the page. If yours is slow, implement `IAsyncPlayer` instead and put
 `await Task.Yield();` in your search loop now and then; the page stays responsive.
+
+## Using the website
+
+Drag pieces or click a piece then its target square. Right-click (or right-drag) draws circles and
+arrows (hold Shift for red, Alt/Ctrl for blue). Keyboard: ← → step through moves, ↑ ↓ jump to the
+start/end, `f` flips the board, Esc cancels. The square icon at the top switches board colours.
 
 ## Rules notes
 
