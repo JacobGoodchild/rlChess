@@ -26,7 +26,31 @@ public class RulesTests
     [InlineData("rnbqkbnr/pppppppp/9/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")]
     [InlineData("8/8/8/8/8/8/8/8 w - - 0 1")]
     [InlineData("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR x KQkq - 0 1")]
+    [InlineData("P3k3/8/8/8/8/8/8/4K3 w - - 0 1")]            // pawn on the last rank
+    [InlineData("4k3/8/8/8/8/8/8/4K2p b - - 0 1")]            // pawn on the first rank
+    [InlineData("4k3/8/8/8/8/8/8/4K2r b - - 0 1")]            // white (not to move) is in check
+    [InlineData("4k3/8/8/8/8/8/8/K1K5 w - - 0 1")]            // two white kings
     public void BadFenThrows(string fen) => Assert.Throws<FormatException>(() => Position.FromFen(fen));
+
+    [Theory]
+    [InlineData("4k3/8/8/3pP3/8/8/8/4K3 w - d3 0 1")]   // wrong rank for white to move
+    [InlineData("4k3/8/8/4P3/8/8/8/4K3 w - d6 0 1")]    // no black pawn that could have just moved
+    [InlineData("4k3/3n4/8/3pP3/8/8/8/4K3 w - d6 0 1")] // the pawn's start square is occupied
+    public void ImplausibleEnPassantSquareIsIgnored(string fen)
+    {
+        var p = Position.FromFen(fen);
+        Assert.Equal(Square.None, p.EnPassantSquare);
+        Assert.DoesNotContain(p.GetLegalMoves(), m => m.IsEnPassant);
+    }
+
+    [Fact]
+    public void AsciiBoard()
+    {
+        var text = new Position().ToAscii();
+        Assert.StartsWith("8  r n b q k b n r", text);
+        Assert.Contains("1  R N B Q K B N R", text);
+        Assert.EndsWith("White to move", text);
+    }
 
     [Fact]
     public void EnPassantSquareOnlyKeptWhenCapturePossible()
@@ -83,7 +107,7 @@ public class RulesTests
         Assert.False(HasMove(through, "e1g1"));
         Assert.True(HasMove(through, "e1c1"));
         // Into check: g1 attacked.
-        Assert.False(HasMove(Position.FromFen("6rk/8/8/8/8/8/8/R3K2R w KQ - 0 1"), "e1g1"));
+        Assert.False(HasMove(Position.FromFen("6r1/1k6/8/8/8/8/8/R3K2R w KQ - 0 1"), "e1g1"));
         // Queenside: b1 attacked is fine (king doesn't cross it), d1 attacked is not.
         Assert.True(HasMove(Position.FromFen("1r4k1/8/8/8/8/8/8/R3K3 w Q - 0 1"), "e1c1"));
         Assert.False(HasMove(Position.FromFen("3r2k1/8/8/8/8/8/8/R3K3 w Q - 0 1"), "e1c1"));

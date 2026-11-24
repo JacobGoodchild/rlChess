@@ -155,14 +155,33 @@ public sealed class Position
         if (_board[Square.H8] != Piece.BlackRook) Castling &= ~CastlingRights.BlackKingside;
         if (_board[Square.A8] != Piece.BlackRook) Castling &= ~CastlingRights.BlackQueenside;
 
+        for (int file = 0; file < 8; file++)
+        {
+            if (_board[Square.At(file, 0)].Type() == PieceType.Pawn || _board[Square.At(file, 7)].Type() == PieceType.Pawn)
+                throw new FormatException("Pawns can't be on the first or last rank.");
+        }
+
         EnPassantSquare = Square.None;
         if (parts[3] != "-")
         {
             int ep = Square.Parse(parts[3]);
             if (ep == Square.None) throw new FormatException($"Bad FEN en passant square '{parts[3]}'.");
+            // It must be the square just behind a pawn that has just made a double step.
+            var them = SideToMove.Opponent();
+            int expectedRank = SideToMove == Color.White ? 5 : 2;
+            int pawnSq = SideToMove == Color.White ? ep - 8 : ep + 8;
+            int originSq = SideToMove == Color.White ? ep + 8 : ep - 8;
+            bool plausible = Square.Rank(ep) == expectedRank
+                             && _board[pawnSq] == PieceType.Pawn.Of(them)
+                             && _board[ep] == Piece.None
+                             && _board[originSq] == Piece.None;
             // Only keep it if a pawn could actually capture there (keeps hashes and FEN output consistent).
-            if (EnPassantCaptureIsPossible(ep, SideToMove)) EnPassantSquare = ep;
+            if (plausible && EnPassantCaptureIsPossible(ep, SideToMove)) EnPassantSquare = ep;
         }
+
+        // The side that just moved can't have left its own king in check.
+        if (IsSquareAttacked(_kingSquare[(int)SideToMove.Opponent()], SideToMove))
+            throw new FormatException("The side not to move is in check, so this position can't happen.");
 
         HalfmoveClock = parts.Length > 4 && int.TryParse(parts[4], out var hm) && hm >= 0 ? hm : 0;
         FullmoveNumber = parts.Length > 5 && int.TryParse(parts[5], out var fm) && fm > 0 ? fm : 1;
@@ -201,6 +220,25 @@ public sealed class Position
     }
 
     public override string ToString() => ToFen();
+
+    /// <summary>
+    /// A text picture of the board, White at the bottom (upper case = White), handy when debugging:
+    /// <code>Console.WriteLine(position.ToAscii());</code>
+    /// </summary>
+    public string ToAscii()
+    {
+        var sb = new StringBuilder();
+        for (int rank = 7; rank >= 0; rank--)
+        {
+            sb.Append(rank + 1).Append(' ');
+            for (int file = 0; file < 8; file++)
+                sb.Append(' ').Append(_board[Square.At(file, rank)].ToFenChar());
+            sb.Append('\n');
+        }
+        sb.Append("   a b c d e f g h\n");
+        sb.Append(SideToMove == Color.White ? "White" : "Black").Append(" to move");
+        return sb.ToString();
+    }
 
     // ------------------------------------------------------------------ Hashing
 

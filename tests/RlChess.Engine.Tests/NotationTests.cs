@@ -15,7 +15,7 @@ public class NotationTests
     [InlineData("r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1", "e1g1", "O-O")]
     [InlineData("r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1", "e1c1", "O-O-O")]
     [InlineData("8/4P3/8/8/8/8/k7/4K3 w - - 0 1", "e7e8q", "e8=Q")]
-    [InlineData("3k4/4P3/8/8/8/8/8/4K3 w - - 0 1", "e7e8n", "e8=N")]
+    [InlineData("8/4P3/k7/8/8/8/8/4K3 w - - 0 1", "e7e8n", "e8=N")]
     [InlineData("1k6/4P3/8/8/8/8/8/4K3 w - - 0 1", "e7e8q", "e8=Q+")]
     [InlineData("rnbqkbnr/pppp1ppp/8/4p3/6P1/5P2/PPPPP2P/RNBQKBNR b KQkq - 0 2", "d8h4", "Qh4#")]
     [InlineData("rnbqkbnr/ppp1p1pp/8/3pPp2/8/8/PPPP1PPP/RNBQKBNR w KQkq f6 0 3", "e5f6", "exf6")]
