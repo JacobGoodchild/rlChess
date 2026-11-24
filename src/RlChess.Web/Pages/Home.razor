@@ -159,6 +159,13 @@
                     <button class="btn" @onclick="CopyFen">Copy FEN</button>
                     <button class="btn" @onclick="CopyPgn">Copy PGN</button>
                 </div>
+                <label class="field-label" for="pgn">Import PGN</label>
+                <textarea id="pgn" class="fen-input pgn-input @(_pgnError is null ? "" : "invalid")" rows="3" spellcheck="false"
+                          placeholder="Paste a game, e.g. 1. e4 e5 2. Nf3 Nc6" @bind="_pgnInput" @bind:event="oninput"></textarea>
+                @if (_pgnError is not null) { <div class="error">@_pgnError</div> }
+                <div class="control-row">
+                    <button class="btn" disabled="@string.IsNullOrWhiteSpace(_pgnInput)" @onclick="LoadPgn">Load PGN</button>
+                </div>
             </details>
         </aside>
     </main>

@@ -597,3 +597,4 @@ svg .stroke { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap:
 }
 .swatch.chosen { border-color: var(--accent); }
 .click-away { position: fixed; inset: 0; z-index: 140; }
+.pgn-input { resize: vertical; min-height: 64px; line-height: 1.35; }

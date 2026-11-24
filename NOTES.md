@@ -7,7 +7,9 @@ Read this first. It's the hand-over log between work sessions.
 Done and working:
 - **Engine** (`src/RlChess.Engine`): 64-square board ("mailbox") with pre-computed move tables,
   pseudo-legal generation + make/check/undo legality filter, Zobrist hashing, FEN in/out,
-  SAN + UCI formatting/parsing, `Game` (move list, SAN, result, PGN export), all end-of-game rules.
+  SAN + UCI formatting/parsing, `Game` (move list, SAN, result, PGN export), `Pgn.Parse/ParseAll`
+  (PGN import: skips comments, variations, NAGs), `Position.ToAscii()`, all end-of-game rules.
+  FEN loading rejects impossible positions (pawns on back ranks, side not to move in check).
   Perft matches every standard position (start, Kiwipete, positions 3-6) at the depths in
   `PerftTests.cs`. Roughly 20M positions/sec in perft on the dev container.
 - **Players**: `IPlayer`, optional `IAsyncPlayer` (for slow players on the website),
@@ -22,7 +24,9 @@ Done and working:
   drag-and-drop and click-click, legal-move dots, last move, check highlight; promotion picker;
   SAN move list with history browsing (click a move, arrow keys, Home/End); undo (vs computer it
   takes back to your turn); flip (button or `f`); new game dialog; rematch; game-over result;
-  sounds + mute (remembered); FEN load/copy, PGN copy; phone layout; light/dark follows the device.
+  sounds + mute (remembered); FEN load/copy, PGN copy + import (loads as a two-player game);
+  right-click arrows/circles; board colour themes (remembered); pieces slide on undo/back-navigation;
+  phone layout (touch tap and drag tested); light/dark follows the device.
 - **CI/CD**: `.github/workflows/deploy.yml` builds, runs fast tests, publishes, rewrites
   `<base href>` to `/rlChess/`, adds `.nojekyll` and `404.html`, deploys to Pages.
 
@@ -51,8 +55,7 @@ Done and working:
 ## Ideas / next steps
 
 - Owner's own work: minimax/alpha-beta player, then RL player (not ours to write).
-- Possible polish: move animation for undo/back-navigation, premoves, board/piece theme picker,
-  arrows/right-click annotations, "download PGN" button, clocks.
+- Possible polish: premoves, piece-set picker, "download PGN" button, clocks, a resign/draw button.
 - Arena: an Elo-difference estimate (with error bars) in the summary.
 - A faster (bitboard) move generator later if RL training needs more speed; perft tests make
   swapping the internals safe.

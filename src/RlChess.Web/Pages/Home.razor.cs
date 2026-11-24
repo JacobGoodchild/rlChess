@@ -99,14 +99,14 @@ public partial class Home : IAsyncDisposable
 
     // ================================================================== game flow
 
-    private void StartGame(string? fen)
+    private void StartGame(string? fen, ChessGame? existing = null)
     {
         _generation++;
         _cts.Cancel();
         _cts = new CancellationTokenSource();
         _thinking = false;
 
-        _game = new ChessGame(fen);
+        _game = existing ?? new ChessGame(fen);
         _computer = _opponent.CreateComputer?.Invoke();
         _humanColor = _colorChoice switch
         {
@@ -349,6 +349,27 @@ public partial class Home : IAsyncDisposable
         catch (FormatException e)
         {
             _fenError = e.Message;
+        }
+    }
+
+    private string _pgnInput = "";
+    private string? _pgnError;
+
+    /// <summary>Loads a pasted PGN as a two-player game, showing its final position.</summary>
+    private void LoadPgn()
+    {
+        try
+        {
+            var parsed = Pgn.Parse(_pgnInput);
+            _pgnError = null;
+            _opponent = PlayerOption.Human;
+            StartGame(null, parsed.Game);
+            _pgnInput = "";
+            Flash($"Game loaded · {parsed.Game.Moves.Count} moves");
+        }
+        catch (FormatException e)
+        {
+            _pgnError = e.Message;
         }
     }
 

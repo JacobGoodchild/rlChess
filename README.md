@@ -11,7 +11,7 @@ computer players (minimax, and later a reinforcement-learning player trained by 
 
 | Folder | What it is |
 | --- | --- |
-| `src/RlChess.Engine` | The rules library: board, legal moves, check/mate/draws, FEN, SAN/UCI, PGN. No UI code. |
+| `src/RlChess.Engine` | The rules library: board, legal moves, check/mate/draws, FEN, SAN/UCI, PGN (read and write). No UI code. |
 | `src/RlChess.Web` | The website (Blazor WebAssembly), running the same engine in the browser. |
 | `src/RlChess.Arena` | Console app that plays many games between two players and prints statistics. |
 | `tests/RlChess.Engine.Tests` | Unit tests and perft tests (move-generation proofs). |
