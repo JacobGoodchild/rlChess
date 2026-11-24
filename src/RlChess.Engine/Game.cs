@@ -44,6 +44,7 @@ public sealed class Game
     /// <summary>Plays a move given in SAN ("Nf3") or UCI ("g1f3").</summary>
     public void Play(string moveText)
     {
+        if (IsOver) throw new InvalidOperationException("The game is over.");
         if (Notation.TryParseUci(Position, moveText, out var m) || Notation.TryParseSan(Position, moveText, out m))
             Play(m);
         else
