@@ -35,8 +35,11 @@ dotnet run --project src/RlChess.Web
 ```
 
 ```bash
-dotnet run --project src/RlChess.Arena -c Release -- --games 1000 --p1 random --p2 random --pgn games.pgn
+dotnet run --project src/RlChess.Arena -c Release -- --games 1000 --p1 random --p2 random --pgn games.pgn --threads all
 ```
+
+Arena options: `--games`, `--p1`, `--p2`, `--pgn <file>`, `--fen <start position>`, `--max-plies`,
+`--seed` (reproducible random players) and `--threads` (a number, or `all` for every CPU core).
 
 The fast tests take about a second. The slow ones are deep perft runs (~600 million positions, about
 30 seconds). Every push to `main` builds, runs the fast tests and deploys the website.

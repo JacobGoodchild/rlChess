@@ -2,10 +2,11 @@
 using System.Text;
 using RlChess.Engine;
 using RlChess.Engine.Players;
+using ChessGame = RlChess.Engine.Game;
 
 // rlChess Arena: plays N games between two players as fast as possible, alternating colours.
 //
-//   dotnet run --project src/RlChess.Arena -c Release -- --games 1000 --p1 random --p2 random --pgn games.pgn
+//   dotnet run --project src/RlChess.Arena -c Release -- --games 1000 --p1 random --p2 random --pgn games.pgn --threads all
 //
 // Players are looked up by id in PlayerRegistry (see src/RlChess.Engine/Players/PlayerRegistry.cs).
 
@@ -15,6 +16,7 @@ string? pgnPath = null;
 string? startFen = null;
 int maxPlies = 1000;
 int? seed = null;
+int threads = 1;
 
 for (int i = 0; i < args.Length; i++)
 {
@@ -28,6 +30,10 @@ for (int i = 0; i < args.Length; i++)
         case "--fen": startFen = Next(); break;
         case "--max-plies": maxPlies = int.Parse(Next()); break;
         case "--seed": seed = int.Parse(Next()); break;
+        case "-t" or "--threads":
+            var t = Next();
+            threads = t == "all" ? Environment.ProcessorCount : int.Parse(t);
+            break;
         case "-h" or "--help":
             PrintHelp();
             return 0;
@@ -39,8 +45,8 @@ for (int i = 0; i < args.Length; i++)
 
 IPlayer Create(string id, int offset)
 {
-    // Seeded random players get distinct, reproducible seeds.
-    if (seed is int s && id.Equals("random", StringComparison.OrdinalIgnoreCase)) return new RandomPlayer(s + offset);
+    // Seeded random players get distinct, reproducible seeds (per game, so threads don't matter).
+    if (seed is int s && id.Equals("random", StringComparison.OrdinalIgnoreCase)) return new RandomPlayer(unchecked(s * 1_000_003 + offset));
     var entry = PlayerRegistry.Find(id);
     if (entry is null)
         throw new ArgumentException($"Unknown player '{id}'. Known: {string.Join(", ", PlayerRegistry.All.Select(e => e.Id))}");
@@ -59,21 +65,39 @@ catch (ArgumentException e)
     return 1;
 }
 
-Console.WriteLine($"Arena: {p1.Name} (P1) vs {p2.Name} (P2), {games} games, alternating colours.");
+threads = Math.Clamp(threads, 1, Math.Max(1, games));
+Console.WriteLine($"Arena: {p1.Name} (P1) vs {p2.Name} (P2), {games} games, alternating colours, {threads} thread(s).");
+
+bool seededRandom(string id) => seed is not null && id.Equals("random", StringComparison.OrdinalIgnoreCase);
+var results = new ChessGame[games];
+int finished = 0;
+var sw = Stopwatch.StartNew();
+
+// Each worker thread gets its own player objects (players don't have to be thread-safe).
+Parallel.For(0, games, new ParallelOptions { MaxDegreeOfParallelism = threads },
+    () => (P1: Create(p1Id, 0), P2: Create(p2Id, 1)),
+    (g, _, local) =>
+    {
+        var a = seededRandom(p1Id) ? Create(p1Id, 2 * g) : local.P1;
+        var b = seededRandom(p2Id) ? Create(p2Id, 2 * g + 1) : local.P2;
+        bool p1White = g % 2 == 0;
+        results[g] = MatchRunner.PlayGame(p1White ? a : b, p1White ? b : a, startFen, maxPlies, recordSan: pgnPath is not null);
+        int done = Interlocked.Increment(ref finished);
+        if (games >= 20 && done % Math.Max(1, games / 10) == 0) Console.WriteLine($"  {done}/{games} games...");
+        return local;
+    },
+    _ => { });
 
 int p1Wins = 0, p2Wins = 0, draws = 0;
 long totalPlies = 0;
 var drawReasons = new Dictionary<GameEndReason, int>();
 var winReasons = new Dictionary<GameEndReason, int>();
 var pgn = pgnPath is null ? null : new StringBuilder();
-var sw = Stopwatch.StartNew();
 
 for (int g = 0; g < games; g++)
 {
+    var game = results[g];
     bool p1White = g % 2 == 0;
-    var white = p1White ? p1 : p2;
-    var black = p1White ? p2 : p1;
-    var game = MatchRunner.PlayGame(white, black, startFen, maxPlies);
     totalPlies += game.Moves.Count;
 
     var r = game.Result;
@@ -89,11 +113,8 @@ for (int g = 0; g < games; g++)
         winReasons[r.Reason] = winReasons.GetValueOrDefault(r.Reason) + 1;
     }
 
-    pgn?.Append(game.ToPgn(white.Name + (p1White ? " (P1)" : " (P2)"), black.Name + (p1White ? " (P2)" : " (P1)"),
+    pgn?.Append(game.ToPgn(p1White ? $"{p1.Name} (P1)" : $"{p2.Name} (P2)", p1White ? $"{p2.Name} (P2)" : $"{p1.Name} (P1)",
         eventName: "rlChess Arena")).Append('\n');
-
-    if (games >= 20 && (g + 1) % Math.Max(1, games / 10) == 0)
-        Console.WriteLine($"  {g + 1}/{games} games...");
 }
 
 sw.Stop();
@@ -131,6 +152,7 @@ static void PrintHelp()
           --fen <fen>         start every game from this position
           --max-plies <N>     declare a draw after this many half-moves (default 1000)
           --seed <N>          seed for random players, for reproducible runs
+          -t, --threads <N>   play games in parallel on N CPU cores ("all" = every core)
         """);
     Console.WriteLine("Players: " + string.Join(", ", PlayerRegistry.All.Select(e => e.Id)));
 }

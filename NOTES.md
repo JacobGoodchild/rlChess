@@ -13,8 +13,11 @@ Done and working:
 - **Players**: `IPlayer`, optional `IAsyncPlayer` (for slow players on the website),
   `RandomPlayer` (optional seed), `PlayerRegistry` (one line per player → shows on website + Arena),
   `MatchRunner.PlayGame`.
-- **Arena** (`src/RlChess.Arena`): `--games --p1 --p2 --pgn --fen --max-plies --seed`.
-  ~280 random-vs-random games/sec including SAN/PGN bookkeeping.
+- **Arena** (`src/RlChess.Arena`): `--games --p1 --p2 --pgn --fen --max-plies --seed --threads`.
+  Random vs random on the 4-core dev container: ~410 games/sec on one thread, ~1050 with
+  `--threads all`; slower (~650) with `--pgn` because move names (SAN) are then recorded.
+  Seeded runs give identical results whatever the thread count. Each worker thread gets its own
+  player objects, so players needn't be thread-safe.
 - **Website** (`src/RlChess.Web`): play vs Random (choose colour) or two players on one device;
   drag-and-drop and click-click, legal-move dots, last move, check highlight; promotion picker;
   SAN move list with history browsing (click a move, arrow keys, Home/End); undo (vs computer it
@@ -35,8 +38,9 @@ Done and working:
 - En passant square is only stored (and written to FEN) when a pawn could actually capture.
   This keeps repetition detection correct. FEN round-trip tests expect this.
 - Threefold and fifty-move draws are automatic, not claimed.
-- `Game.Play` computes SAN for every move (needed for display/PGN). For RL self-play at max speed,
-  use `Position` + `GenerateLegalMoves(Span<Move>)` directly and skip `Game`.
+- `Game.Play` computes SAN for every move unless created with `recordSan: false` (the Arena does that
+  when not saving PGN). For RL self-play at max speed, `Position` + `GenerateLegalMoves(Span<Move>)`
+  directly is faster still.
 - The website runs single-threaded WebAssembly. A slow `IPlayer` freezes the page while it thinks;
   `IAsyncPlayer` + `await Task.Yield()` is the escape hatch. Real multi-threading would need
   cross-origin-isolation headers that GitHub Pages doesn't send.
@@ -49,6 +53,6 @@ Done and working:
 - Owner's own work: minimax/alpha-beta player, then RL player (not ours to write).
 - Possible polish: move animation for undo/back-navigation, premoves, board/piece theme picker,
   arrows/right-click annotations, "download PGN" button, clocks.
-- Arena: parallel games across CPU cores; an Elo-difference estimate in the summary.
+- Arena: an Elo-difference estimate (with error bars) in the summary.
 - A faster (bitboard) move generator later if RL training needs more speed; perft tests make
   swapping the internals safe.

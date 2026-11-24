@@ -17,8 +17,16 @@ public sealed class Game
     public IReadOnlyList<Move> Moves => _moves;
     public IReadOnlyList<string> SanMoves => _san;
 
-    public Game(string? startFen = null)
+    private readonly bool _recordSan;
+
+    /// <param name="startFen">Starting position (default: the normal start).</param>
+    /// <param name="recordSan">
+    /// Keep the SAN of each move (needed for <see cref="SanMoves"/> and <see cref="ToPgn"/>).
+    /// Turning it off makes playing moves noticeably faster, e.g. for self-play training.
+    /// </param>
+    public Game(string? startFen = null, bool recordSan = true)
     {
+        _recordSan = recordSan;
         StartFen = startFen ?? Position.StartFen;
         Position = Position.FromFen(StartFen);
         StartFen = Position.ToFen(); // normalised
@@ -35,7 +43,7 @@ public sealed class Game
         if (IsOver) throw new InvalidOperationException("The game is over.");
         if (!Position.TryFindLegalMove(move.From, move.To, move.Promotion, out var legal))
             throw new ArgumentException($"Illegal move {move.ToUci()} in {Position.ToFen()}.", nameof(move));
-        _san.Add(Notation.ToSan(Position, legal));
+        if (_recordSan) _san.Add(Notation.ToSan(Position, legal));
         _moves.Add(legal);
         Position.MakeMove(legal);
         Result = Position.GetResult();
@@ -57,7 +65,7 @@ public sealed class Game
         if (_moves.Count == 0) return false;
         Position.UndoMove();
         _moves.RemoveAt(_moves.Count - 1);
-        _san.RemoveAt(_san.Count - 1);
+        if (_recordSan) _san.RemoveAt(_san.Count - 1);
         Result = Position.GetResult();
         return true;
     }
@@ -79,6 +87,7 @@ public sealed class Game
     /// <summary>Exports the game as PGN.</summary>
     public string ToPgn(string white = "?", string black = "?", string eventName = "rlChess game", DateTime? date = null)
     {
+        if (!_recordSan) throw new InvalidOperationException("This game was created with recordSan: false, so it can't be exported as PGN.");
         var sb = new StringBuilder();
         void Tag(string k, string v) => sb.Append('[').Append(k).Append(" \"").Append(v.Replace("\\", "\\\\").Replace("\"", "\\\"")).Append("\"]\n");
         Tag("Event", eventName);

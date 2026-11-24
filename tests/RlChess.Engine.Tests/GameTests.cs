@@ -60,6 +60,17 @@ public class GameTests
     }
 
     [Fact]
+    public void WithoutSanRecordingGamesAreIdenticalButPgnIsRefused()
+    {
+        var withSan = MatchRunner.PlayGame(new RandomPlayer(5), new RandomPlayer(6));
+        var withoutSan = MatchRunner.PlayGame(new RandomPlayer(5), new RandomPlayer(6), recordSan: false);
+        Assert.Equal(withSan.Moves, withoutSan.Moves);
+        Assert.Equal(withSan.Result, withoutSan.Result);
+        Assert.Empty(withoutSan.SanMoves);
+        Assert.Throws<InvalidOperationException>(() => withoutSan.ToPgn());
+    }
+
+    [Fact]
     public void MoveLimitIsApplied()
     {
         var g = MatchRunner.PlayGame(new RandomPlayer(1), new RandomPlayer(2), maxPlies: 10);
