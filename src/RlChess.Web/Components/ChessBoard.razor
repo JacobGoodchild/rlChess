@@ -1,0 +1,130 @@
+@using RlChess.Engine
+@using RlChess.Web.Game
+@implements IAsyncDisposable
+@inject IJSRuntime JS
+
+<div class="board-wrap">
+    <div class="board @(Animate ? "animate" : "")" data-orientation="@(Orientation == Color.White ? "white" : "black")" @ref="_boardEl">
+        @if (LastMove is Move lm && !lm.IsNone)
+        {
+            <div class="hl last-move" style="@Pos(lm.From)"></div>
+            <div class="hl last-move" style="@Pos(lm.To)"></div>
+        }
+        @if (CheckSquare >= 0)
+        {
+            <div class="hl check" style="@Pos(CheckSquare)"></div>
+        }
+        @if (Selected >= 0)
+        {
+            <div class="hl selected" style="@Pos(Selected)"></div>
+        }
+
+        @foreach (var p in Pieces)
+        {
+            <div @key="p.Id"
+                 class="piece @PieceClass(p.Piece) @(MovableColor is Color mc && p.Piece.Color() == mc ? "mine" : "")"
+                 data-sq="@p.Square"
+                 style="@Pos(p.Square)"></div>
+        }
+
+        @if (Dests is not null)
+        {
+            foreach (var d in Dests)
+            {
+                <div class="hl dest @(IsOccupied(d) ? "occupied" : "")" style="@Pos(d)"></div>
+            }
+        }
+
+        <div class="coords files">
+            @for (int i = 0; i < 8; i++)
+            {
+                int f = Orientation == Color.White ? i : 7 - i;
+                <span class="@(((i & 1) == 0) ? "on-dark" : "on-light")">@((char)('a' + f))</span>
+            }
+        </div>
+        <div class="coords ranks">
+            @for (int i = 0; i < 8; i++)
+            {
+                int r = Orientation == Color.White ? 7 - i : i;
+                <span class="@(((i & 1) == 0) ? "on-dark" : "on-light")">@(r + 1)</span>
+            }
+        </div>
+
+        @if (PromotionSquare >= 0)
+        {
+            var color = PromotionColor;
+            int file = Square.File(PromotionSquare);
+            int x = Orientation == Color.White ? file : 7 - file;
+            bool fromTop = (Orientation == Color.White) == (color == Color.White);
+            <div class="promotion" @onclick="() => OnPromotion.InvokeAsync(PieceType.None)">
+                @{ var types = new[] { PieceType.Queen, PieceType.Knight, PieceType.Rook, PieceType.Bishop }; }
+                @for (int i = 0; i < 4; i++)
+                {
+                    var t = types[i];
+                    int y = fromTop ? i : 7 - i;
+                    <button class="promo-choice" title="@t" style="transform: translate(@(x * 100)%, @(y * 100)%)"
+                            @onclick="() => OnPromotion.InvokeAsync(t)" @onclick:stopPropagation="true">
+                        <span class="piece @PieceClass(t.Of(color))"></span>
+                    </button>
+                }
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<PieceTracker.TrackedPiece> Pieces { get; set; } = [];
+    [Parameter] public Color Orientation { get; set; } = Color.White;
+    [Parameter] public Move? LastMove { get; set; }
+    [Parameter] public int CheckSquare { get; set; } = -1;
+    [Parameter] public int Selected { get; set; } = -1;
+    [Parameter] public IReadOnlyCollection<int>? Dests { get; set; }
+    /// <summary>Pieces of this colour can be dragged (null = none).</summary>
+    [Parameter] public Color? MovableColor { get; set; }
+    [Parameter] public bool Animate { get; set; } = true;
+    [Parameter] public int PromotionSquare { get; set; } = -1;
+    [Parameter] public Color PromotionColor { get; set; }
+    [Parameter] public EventCallback<PieceType> OnPromotion { get; set; }
+    [Parameter] public EventCallback<int> OnSquareDownCallback { get; set; }
+    [Parameter] public EventCallback<(int From, int To, bool Dragged)> OnSquareUpCallback { get; set; }
+
+    private ElementReference _boardEl;
+    private IJSObjectReference? _module, _handle;
+    private DotNetObjectReference<ChessBoard>? _self;
+
+    private bool IsOccupied(int sq) => Pieces.Any(p => p.Square == sq);
+
+    private string Pos(int sq)
+    {
+        int file = Square.File(sq), rank = Square.Rank(sq);
+        int x = Orientation == Color.White ? file : 7 - file;
+        int y = Orientation == Color.White ? 7 - rank : rank;
+        return $"transform: translate({x * 100}%, {y * 100}%)";
+    }
+
+    public static string PieceClass(Piece p) =>
+        (p.Color() == Color.White ? "w" : "b") + p.Type().ToLetter();
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        _module = await JS.InvokeAsync<IJSObjectReference>("import", "./js/board.js");
+        _self = DotNetObjectReference.Create(this);
+        _handle = await _module.InvokeAsync<IJSObjectReference>("attachBoard", _boardEl, _self);
+    }
+
+    [JSInvokable] public Task OnSquareDown(int sq) => OnSquareDownCallback.InvokeAsync(sq);
+
+    [JSInvokable] public Task OnSquareUp(int from, int to, bool dragged) => OnSquareUpCallback.InvokeAsync((from, to, dragged));
+
+    public async ValueTask DisposeAsync()
+    {
+        try
+        {
+            if (_handle is not null) { await _handle.InvokeVoidAsync("dispose"); await _handle.DisposeAsync(); }
+            if (_module is not null) await _module.DisposeAsync();
+        }
+        catch (JSDisconnectedException) { }
+        _self?.Dispose();
+    }
+}

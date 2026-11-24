@@ -1,5 +1,229 @@
 @page "/"
+@using RlChess.Engine
+@using RlChess.Web.Components
+@using RlChess.Web.Game
 
 <PageTitle>rlChess</PageTitle>
 
-<h1>rlChess — coming soon</h1>
+<div class="app">
+    <header class="topbar">
+        <a class="brand" href="./" @onclick="() => { }" @onclick:preventDefault="true">
+            <span class="brand-mark" aria-hidden="true"></span><span>rl<b>Chess</b></span>
+        </a>
+        <nav class="topnav">
+            <button class="btn primary" @onclick="() => _showNewGame = true">New game</button>
+            <button class="icon-btn" title="@(_muted ? "Sound off" : "Sound on")" aria-label="Toggle sound" @onclick="ToggleMute">
+                @if (_muted)
+                {
+                    <svg viewBox="0 0 24 24"><path d="M4 9h4l5-4v14l-5-4H4z" /><path d="M17 9l5 6M22 9l-5 6" class="stroke" /></svg>
+                }
+                else
+                {
+                    <svg viewBox="0 0 24 24"><path d="M4 9h4l5-4v14l-5-4H4z" /><path d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12" class="stroke" /></svg>
+                }
+            </button>
+            <a class="icon-btn" href="https://github.com/JacobGoodchild/rlChess" target="_blank" rel="noopener" title="Source on GitHub" aria-label="Source on GitHub">
+                <svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 0 0-3.2 19.5c.5.1.7-.2.7-.5v-1.7c-2.8.6-3.4-1.3-3.4-1.3-.4-1.2-1.1-1.5-1.1-1.5-.9-.6.1-.6.1-.6 1 .1 1.5 1 1.5 1 .9 1.5 2.3 1.1 2.9.8.1-.6.3-1.1.6-1.3-2.2-.3-4.6-1.1-4.6-5 0-1.1.4-2 1-2.7-.1-.3-.4-1.3.1-2.7 0 0 .8-.3 2.8 1a9.6 9.6 0 0 1 5 0c1.9-1.3 2.7-1 2.7-1 .6 1.4.2 2.4.1 2.7.6.7 1 1.6 1 2.7 0 3.9-2.4 4.7-4.6 5 .4.3.7.9.7 1.9V21c0 .3.2.6.7.5A10 10 0 0 0 12 2z" /></svg>
+            </a>
+        </nav>
+    </header>
+
+    <main class="game">
+        <section class="board-col">
+            @PlayerStrip(_orientation.Opponent())
+            <ChessBoard Pieces="_tracker.Pieces"
+                        Orientation="_orientation"
+                        LastMove="ShownLastMove"
+                        CheckSquare="CheckSquare"
+                        Selected="_selected"
+                        Dests="_dests"
+                        MovableColor="MovableColor"
+                        Animate="_animate"
+                        PromotionSquare="@(_pendingPromotion?.To ?? -1)"
+                        PromotionColor="_game.SideToMove"
+                        OnPromotion="OnPromotion"
+                        OnSquareDownCallback="OnSquareDown"
+                        OnSquareUpCallback="OnSquareUp" />
+            @PlayerStrip(_orientation)
+        </section>
+
+        <aside class="side">
+            <div class="panel status-panel">
+                <div class="mode">
+                    @if (VsComputer)
+                    {
+                        <span>vs <b>@_opponent.Name</b> computer</span>
+                    }
+                    else
+                    {
+                        <span><b>Two players</b> · same device</span>
+                    }
+                </div>
+                <div class="status @(_game.IsOver ? "over" : "")">
+                    @if (_thinking) { <span class="dots" aria-hidden="true"><i></i><i></i><i></i></span> }
+                    @StatusText()
+                </div>
+            </div>
+
+            <div class="panel moves-panel">
+                <div class="nav-buttons">
+                    <button class="icon-btn" title="First move" disabled="@(_viewPly == 0)" @onclick="() => GoToPly(0)">
+                        <svg viewBox="0 0 24 24"><path d="M5 5h2.5v14H5zM19 5l-10 7 10 7z" /></svg>
+                    </button>
+                    <button class="icon-btn" title="Previous move (←)" disabled="@(_viewPly == 0)" @onclick="() => GoToPly(_viewPly - 1)">
+                        <svg viewBox="0 0 24 24"><path d="M16 5l-9 7 9 7z" /></svg>
+                    </button>
+                    <button class="icon-btn" title="Next move (→)" disabled="@IsLive" @onclick="() => GoToPly(_viewPly + 1)">
+                        <svg viewBox="0 0 24 24"><path d="M8 5l9 7-9 7z" /></svg>
+                    </button>
+                    <button class="icon-btn" title="Last move" disabled="@IsLive" @onclick="() => GoToPly(_game.Moves.Count)">
+                        <svg viewBox="0 0 24 24"><path d="M16.5 5H19v14h-2.5zM5 5l10 7-10 7z" /></svg>
+                    </button>
+                </div>
+                <div class="move-list" @ref="_moveListEl">
+                    @if (_game.Moves.Count == 0)
+                    {
+                        <div class="empty">@(HumanToMove ? "Make a move to begin." : "The computer moves first.")</div>
+                    }
+                    @foreach (var row in MoveRows())
+                    {
+                        <div class="move-row">
+                            <span class="num">@(row.Number).</span>
+                            @MoveCell(row.WhitePly)
+                            @MoveCell(row.BlackPly)
+                        </div>
+                    }
+                    @if (_game.IsOver)
+                    {
+                        <div class="result">
+                            <div class="score">@_game.Result.ToPgnString()</div>
+                            <div class="reason">@_game.Result.ReasonText · @StatusText()</div>
+                        </div>
+                    }
+                </div>
+                @if (!IsLive)
+                {
+                    <button class="back-to-live" @onclick="() => GoToPly(_game.Moves.Count)">Viewing an earlier position · back to the game</button>
+                }
+            </div>
+
+            <div class="panel controls">
+                @if (_game.IsOver)
+                {
+                    <button class="btn primary wide" @onclick="Rematch">Rematch</button>
+                }
+                <div class="control-row">
+                    <button class="btn" disabled="@(!CanUndo)" @onclick="Undo" title="Take back">
+                        <svg viewBox="0 0 24 24"><path d="M9 14L4 9l5-5M4 9h11a5 5 0 0 1 0 10h-3" class="stroke" /></svg>
+                        Undo
+                    </button>
+                    <button class="btn" @onclick="Flip" title="Flip board (f)">
+                        <svg viewBox="0 0 24 24"><path d="M7 4v15M7 19l-3-3M7 19l3-3M17 20V5M17 5l-3 3M17 5l3 3" class="stroke" /></svg>
+                        Flip
+                    </button>
+                    <button class="btn" @onclick="() => _showNewGame = true" title="New game">
+                        <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" class="stroke" /></svg>
+                        New
+                    </button>
+                </div>
+            </div>
+
+            <details class="panel tools">
+                <summary>Position &amp; export</summary>
+                <label class="field-label" for="fen">FEN</label>
+                <div class="fen-row">
+                    <input id="fen" class="fen-input @(_fenError is null ? "" : "invalid")" spellcheck="false" autocomplete="off"
+                           @bind="_fenInput" @bind:event="oninput"
+                           @onkeydown="@(e => { if (e.Key == "Enter") LoadFen(); })" />
+                </div>
+                @if (_fenError is not null) { <div class="error">@_fenError</div> }
+                <div class="control-row">
+                    <button class="btn" @onclick="LoadFen" title="Start a new game from this FEN">Load FEN</button>
+                    <button class="btn" @onclick="CopyFen">Copy FEN</button>
+                    <button class="btn" @onclick="CopyPgn">Copy PGN</button>
+                </div>
+            </details>
+        </aside>
+    </main>
+
+    <footer class="footer">
+        Pieces by <a href="https://commons.wikimedia.org/wiki/Category:SVG_chess_pieces" target="_blank" rel="noopener">Colin M.L. Burnett</a> (BSD).
+        <a href="https://github.com/JacobGoodchild/rlChess" target="_blank" rel="noopener">Source</a>
+    </footer>
+
+    @if (_showNewGame)
+    {
+        <div class="modal-backdrop" @onclick="() => _showNewGame = false">
+            <div class="modal" @onclick:stopPropagation="true" role="dialog" aria-label="New game">
+                <h2>New game</h2>
+                <div class="field-label">Opponent</div>
+                <div class="opponents">
+                    @foreach (var opt in PlayerOption.Computers.Append(PlayerOption.Human))
+                    {
+                        <button class="opponent @(opt.Id == _opponent.Id ? "chosen" : "")" @onclick="() => _opponent = opt">
+                            <span class="opp-name">@(opt.IsHuman ? opt.Name : $"vs {opt.Name}")</span>
+                            <span class="opp-desc">@opt.Description</span>
+                        </button>
+                    }
+                </div>
+                @if (!_opponent.IsHuman)
+                {
+                    <div class="field-label">Play as</div>
+                    <div class="colors">
+                        <button class="color-choice @(_colorChoice == "white" ? "chosen" : "")" title="White" @onclick='() => _colorChoice = "white"'>
+                            <span class="piece wK"></span>
+                        </button>
+                        <button class="color-choice @(_colorChoice == "random" ? "chosen" : "")" title="Random side" @onclick='() => _colorChoice = "random"'>
+                            <span class="piece half"></span>
+                        </button>
+                        <button class="color-choice @(_colorChoice == "black" ? "chosen" : "")" title="Black" @onclick='() => _colorChoice = "black"'>
+                            <span class="piece bK"></span>
+                        </button>
+                    </div>
+                }
+                <div class="modal-actions">
+                    <button class="btn" @onclick="() => _showNewGame = false">Cancel</button>
+                    <button class="btn primary" @onclick="NewGameFromDialog">Play</button>
+                </div>
+            </div>
+        </div>
+    }
+
+    <div class="flash @(_showFlash ? "show" : "")" role="status">@_flash</div>
+</div>
+
+@code {
+    private RenderFragment PlayerStrip(Color side) => __builder =>
+    {
+        var (extra, score) = MaterialFor(side);
+        bool toMove = !_game.IsOver && _game.SideToMove == side && IsLive;
+        <div class="player-strip @(toMove ? "to-move" : "")">
+            <span class="side-dot @(side == Color.White ? "white" : "black")"></span>
+            <span class="player-name">@NameOf(side)</span>
+            @if (IsComputer(side)) { <span class="tag">computer</span> }
+            <span class="material">
+                @foreach (var p in extra)
+                {
+                    <span class="mini piece @ChessBoard.PieceClass(p)"></span>
+                }
+                @if (score > 0) { <span class="plus">+@score</span> }
+            </span>
+        </div>
+    };
+
+    private RenderFragment MoveCell(int ply) => __builder =>
+    {
+        if (ply == -2)
+        {
+            <span class="move empty-move">…</span>
+        }
+        else if (ply < 0)
+        {
+            <span class="move empty-move"></span>
+        }
+        else
+        {
+            <button class="move @(ply + 1 == _viewPly ? "active" : "")" @onclick="() => GoToPly(ply + 1)">@_game.SanMoves[ply]</button>
+        }
+    };
+}
