@@ -143,6 +143,13 @@
                         New
                     </button>
                 </div>
+                @if (!_game.IsOver && _game.Moves.Count > 0)
+                {
+                    <button class="text-btn" @onclick="Resign" title="@(VsComputer ? "Resign this game" : $"{(_game.SideToMove == Color.White ? "White" : "Black")} resigns")">
+                        <svg viewBox="0 0 24 24"><path d="M6 21V4M6 4h11l-2.5 4L17 12H6" class="stroke" /></svg>
+                        Resign
+                    </button>
+                }
             </div>
 
             <details class="panel tools">
@@ -158,6 +165,9 @@
                     <button class="btn" @onclick="LoadFen" title="Start a new game from this FEN">Load FEN</button>
                     <button class="btn" @onclick="CopyFen">Copy FEN</button>
                     <button class="btn" @onclick="CopyPgn">Copy PGN</button>
+                </div>
+                <div class="control-row" style="margin-top: 6px">
+                    <button class="btn" @onclick="DownloadPgn" title="Save this game as a .pgn file">Download PGN</button>
                 </div>
                 <label class="field-label" for="pgn">Import PGN</label>
                 <textarea id="pgn" class="fen-input pgn-input @(_pgnError is null ? "" : "invalid")" rows="3" spellcheck="false"

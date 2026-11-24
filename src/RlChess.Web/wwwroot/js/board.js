@@ -203,6 +203,17 @@ export async function copyText(text) {
     }
 }
 
+export function downloadText(filename, text) {
+    const url = URL.createObjectURL(new Blob([text], { type: "application/x-chess-pgn" }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 export function getSetting(key) {
     try { return localStorage.getItem("rlchess." + key); } catch { return null; }
 }

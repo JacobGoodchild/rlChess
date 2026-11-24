@@ -392,6 +392,27 @@ public partial class Home : IAsyncDisposable
         if (await _module.InvokeAsync<bool>("copyText", _shown.ToFen())) Flash("FEN copied");
     }
 
+    private async Task DownloadPgn()
+    {
+        if (_module is null) return;
+        var (white, black) = PlayerNames();
+        await _module.InvokeVoidAsync("downloadText", $"rlchess-{DateTime.Now:yyyy-MM-dd-HHmm}.pgn", _game.ToPgn(white, black));
+    }
+
+    /// <summary>Resigning: against a computer you resign; with two players the side to move does.</summary>
+    private void Resign()
+    {
+        if (_game.IsOver) return;
+        _generation++;
+        _cts.Cancel();
+        _cts = new CancellationTokenSource();
+        _thinking = false;
+        var loser = VsComputer ? _humanColor : _game.SideToMove;
+        _game.End(GameResult.Win(loser.Opponent(), GameEndReason.Resignation));
+        GoToPly(_game.Moves.Count, animate: false, sound: false);
+        _ = Sound("gameover");
+    }
+
     private async Task CopyPgn()
     {
         if (_module is null) return;

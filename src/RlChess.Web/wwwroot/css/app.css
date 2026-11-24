@@ -599,3 +599,9 @@ svg .stroke { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap:
 .click-away { position: fixed; inset: 0; z-index: 140; }
 .pgn-input { resize: vertical; min-height: 64px; line-height: 1.35; }
 .status.failed { color: var(--bad); font-size: 15px; }
+.text-btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    border: 0; background: none; color: var(--text-dim); cursor: pointer; font-size: 13px; padding: 2px;
+}
+.text-btn:hover { color: var(--bad); }
+.text-btn svg { width: 15px; height: 15px; }

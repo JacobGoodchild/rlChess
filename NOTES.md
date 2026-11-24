@@ -27,7 +27,9 @@ Done and working:
   drag-and-drop and click-click, legal-move dots, last move, check highlight; promotion picker;
   SAN move list with history browsing (click a move, arrow keys, Home/End); undo (vs computer it
   takes back to your turn); flip (button or `f`); new game dialog; rematch; game-over result;
-  sounds + mute (remembered); FEN load/copy, PGN copy + import (loads as a two-player game);
+  sounds + mute (remembered); FEN load/copy, PGN copy/download + import (loads as a two-player
+  game); resign; a clear status message if a computer player throws or returns an illegal move
+  (details logged to the browser console with an `[rlChess]` prefix);
   right-click arrows/circles; board colour themes (remembered); pieces slide on undo/back-navigation;
   phone layout (touch tap and drag tested); light/dark follows the device.
 - **CI/CD**: `.github/workflows/deploy.yml` builds, runs fast tests, publishes, rewrites
@@ -48,6 +50,8 @@ Done and working:
 - `Game.Play` computes SAN for every move unless created with `recordSan: false` (the Arena does that
   when not saving PGN). For RL self-play at max speed, `Position` + `GenerateLegalMoves(Span<Move>)`
   directly is faster still.
+- Blazor shows its red error bar for anything written to stderr, so the web app logs with
+  `Console.WriteLine`, not `Console.Error`.
 - The website runs single-threaded WebAssembly. A slow `IPlayer` freezes the page while it thinks;
   `IAsyncPlayer` + `await Task.Yield()` is the escape hatch. Real multi-threading would need
   cross-origin-isolation headers that GitHub Pages doesn't send.
@@ -58,6 +62,7 @@ Done and working:
 ## Ideas / next steps
 
 - Owner's own work: minimax/alpha-beta player, then RL player (not ours to write).
-- Possible polish: premoves, piece-set picker, "download PGN" button, clocks, a resign/draw button.
+- Possible polish: premoves, piece-set picker, clocks, draw offers, an "analysis" mode that lets
+  you branch off from an earlier position without undoing.
 - A faster (bitboard) move generator later if RL training needs more speed; perft tests make
   swapping the internals safe.
