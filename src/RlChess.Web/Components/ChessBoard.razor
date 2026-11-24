@@ -14,9 +14,14 @@
         {
             <div class="hl check" style="@Pos(CheckSquare)"></div>
         }
+        @if (Premove is (int pf, int pt))
+        {
+            <div class="hl premove" style="@Pos(pf)"></div>
+            <div class="hl premove" style="@Pos(pt)"></div>
+        }
         @if (Selected >= 0)
         {
-            <div class="hl selected" style="@Pos(Selected)"></div>
+            <div class="hl selected @(PremoveDests ? "pre" : "")" style="@Pos(Selected)"></div>
         }
 
         @foreach (var p in Pieces)
@@ -31,7 +36,7 @@
         {
             foreach (var d in Dests)
             {
-                <div class="hl dest @(IsOccupied(d) ? "occupied" : "")" style="@Pos(d)"></div>
+                <div class="hl dest @(IsOccupied(d) ? "occupied" : "") @(PremoveDests ? "pre" : "")" style="@Pos(d)"></div>
             }
         }
 
@@ -88,6 +93,11 @@
     /// <summary>Changes whenever a different position is shown; right-click arrows are cleared then.</summary>
     [Parameter] public int PositionKey { get; set; }
     [Parameter] public EventCallback<int> OnSquareDownCallback { get; set; }
+    /// <summary>The queued premove (from, to), shown highlighted.</summary>
+    [Parameter] public (int From, int To)? Premove { get; set; }
+    /// <summary>The destination dots are premove targets (drawn in the premove colour).</summary>
+    [Parameter] public bool PremoveDests { get; set; }
+    [Parameter] public EventCallback OnRightClickCallback { get; set; }
     [Parameter] public EventCallback<(int From, int To, bool Dragged)> OnSquareUpCallback { get; set; }
 
     private ElementReference _boardEl;
@@ -131,6 +141,8 @@
     [JSInvokable] public Task OnSquareDown(int sq) => OnSquareDownCallback.InvokeAsync(sq);
 
     [JSInvokable] public Task OnSquareUp(int from, int to, bool dragged) => OnSquareUpCallback.InvokeAsync((from, to, dragged));
+
+    [JSInvokable] public Task OnRightClick() => OnRightClickCallback.InvokeAsync();
 
     public async ValueTask DisposeAsync()
     {

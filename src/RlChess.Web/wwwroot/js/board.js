@@ -78,6 +78,7 @@ export function attachBoard(boardEl, dotnet) {
         if (e.button === 2) {
             rightFrom = squareAt(e.clientX, e.clientY);
             e.preventDefault();
+            dotnet.invokeMethodAsync("OnRightClick"); // e.g. cancels a premove
             return;
         }
         if (e.button !== undefined && e.button !== 0) return;
@@ -101,7 +102,7 @@ export function attachBoard(boardEl, dotnet) {
             const g = press.pieceEl.cloneNode(false);
             g.className = press.pieceEl.className.replace(/\bmine\b/, "") + " ghost";
             g.removeAttribute("style");
-            document.body.appendChild(g);
+            (boardEl.closest(".app") ?? document.body).appendChild(g); // inside .app so the piece-set CSS applies
             press.ghost = g;
             press.pieceEl.classList.add("drag-origin");
         }

@@ -1,0 +1,41 @@
+@using RlChess.Engine
+@implements IDisposable
+
+@* Shows one side's clock and refreshes itself while running, without re-rendering the whole page. *@
+<span class="clock @(Clock.Running == Side ? "running" : "") @(Low ? "low" : "")">@Format(Clock.Remaining(Side))</span>
+
+@code {
+    [Parameter, EditorRequired] public ChessClock Clock { get; set; } = default!;
+    [Parameter] public Color Side { get; set; }
+
+    private PeriodicTimer? _timer;
+    private bool _disposed;
+
+    private bool Low => Clock.Remaining(Side) < TimeSpan.FromSeconds(Math.Min(20, Clock.Control.Initial.TotalSeconds / 4));
+
+    public static string Format(TimeSpan t)
+    {
+        if (t.TotalHours >= 1) return $"{(int)t.TotalHours}:{t.Minutes:00}:{t.Seconds:00}";
+        if (t.TotalSeconds < 10) return $"0:{t.Seconds:00}.{t.Milliseconds / 100}";
+        return $"{(int)t.TotalMinutes}:{t.Seconds:00}";
+    }
+
+    protected override void OnInitialized() => _ = Refresh();
+
+    private async Task Refresh()
+    {
+        _timer = new PeriodicTimer(TimeSpan.FromMilliseconds(100));
+        try
+        {
+            while (!_disposed && await _timer.WaitForNextTickAsync())
+                if (Clock.Running == Side) StateHasChanged();
+        }
+        catch (ObjectDisposedException) { }
+    }
+
+    public void Dispose()
+    {
+        _disposed = true;
+        _timer?.Dispose();
+    }
+}

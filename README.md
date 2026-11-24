@@ -74,14 +74,32 @@ The fast tests take about a second. The slow ones are deep perft runs (~600 mill
    }
    ```
 
-2. Register it with one line in `src/RlChess.Players/PlayerRegistry.cs`:
+2. Register it with one line in `src/RlChess.Players/PlayerRegistry.cs`, saying which group it
+   belongs to on the website (`Random`, `Computer` for search-based players, or `AI` for learned ones):
 
    ```csharp
-   new("mine", "My player", "What it does, in a few words.", () => new MyPlayer()),
+   new("mine", "My player", "What it does, in a few words.", PlayerCategory.Computer, _ => new MyPlayer()),
    ```
 
 That's it: it now appears in the website's **New game** dialog and in the Arena
 (`--p1 mine --p2 random`).
+
+### Difficulty levels (optional)
+
+If your player can play at different strengths, give the entry a `LevelRange` (lowest, highest,
+default). The website then shows a level slider for it, and the chosen level is passed to your
+create function. What a level *means* is up to you: search depth for minimax, or which trained
+version of an RL network to load.
+
+```csharp
+new("minimax", "Minimax", "Alpha-beta search.", PlayerCategory.Computer,
+    level => new MinimaxPlayer(depth: level), new LevelRange(1, 10, 4)),
+
+new("rl", "RL network", "Trained by self-play.", PlayerCategory.AI,
+    level => new RlPlayer($"models/generation-{level}.onnx"), new LevelRange(1, 20, 20)),
+```
+
+In the Arena, add the level after a colon: `--p1 minimax:6 --p2 rl:12`.
 
 Handy engine calls: `position.GetLegalMoves()`, `MakeMove`/`UndoMove`, `IsInCheck`, `GetResult()`,
 `position[square]` (the piece on a square; squares are 0–63 with a1 = 0, h8 = 63), `Hash`
@@ -90,7 +108,10 @@ Handy engine calls: `position.GetLegalMoves()`, `MakeMove`/`UndoMove`, `IsInChec
 
 **Slow players on the website:** the browser runs everything on one thread, so a player that thinks
 for several seconds freezes the page. If yours is slow, implement `IAsyncPlayer` instead and put
-`await Task.Yield();` in your search loop now and then; the page stays responsive.
+`await Task.Yield();` in your search loop now and then; the page stays responsive, and the
+website can stop it when it runs out of time (it cancels the `CancellationToken` it passes you;
+return your best move so far when that happens). The think-time limit is in the website's settings;
+in games with a clock, the clock is the limit.
 
 ## Using the website
 
@@ -109,7 +130,7 @@ start/end, `f` flips the board, Esc cancels. The square icon at the top switches
 - Code: [MIT](LICENSE).
 - Chess pieces: by [Colin M.L. Burnett](https://commons.wikimedia.org/wiki/User:Cburnett), from
   Wikimedia Commons, used under the BSD licence (one of the licences the author offers). See
-  [`src/RlChess.Web/wwwroot/pieces/LICENSE.md`](src/RlChess.Web/wwwroot/pieces/LICENSE.md).
+  [`src/RlChess.Web/wwwroot/pieces/cburnett/LICENSE.md`](src/RlChess.Web/wwwroot/pieces/cburnett/LICENSE.md).
 - Sounds: wooden knocks from [Impact Sounds](https://kenney.nl/assets/impact-sounds) by
   [Kenney](https://www.kenney.nl), public domain (CC0); trimmed and mixed by `tools/make-sounds.sh`.
 - Perft reference numbers: [Chess Programming Wiki](https://www.chessprogramming.org/Perft_Results).

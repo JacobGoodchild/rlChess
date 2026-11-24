@@ -1,0 +1,58 @@
+@using RlChess.Players
+@using RlChess.Web.Game
+
+@* Computer players grouped by category. Groups without players say "none yet". *@
+<div class="picker">
+    @foreach (var category in Enum.GetValues<PlayerCategory>())
+    {
+        var entries = PlayerRegistry.InCategory(category).ToList();
+        <div class="picker-group">
+            <span class="picker-cat">@CategoryName(category)</span>
+            <span class="picker-chips">
+                @if (entries.Count == 0)
+                {
+                    <span class="none-yet">none yet</span>
+                }
+                @foreach (var e in entries)
+                {
+                    <button type="button" class="chip @(e.Id == Choice.Id ? "chosen" : "")" title="@e.Description"
+                            @onclick="() => Pick(e)">@e.DisplayName</button>
+                }
+            </span>
+        </div>
+    }
+    @if (Choice.Entry.Levels is { } range)
+    {
+        int level = Choice.EffectiveLevel ?? range.Default;
+        <label class="level-row">
+            <span class="level-label">Level <b>@level</b></span>
+            <input type="range" min="@range.Min" max="@range.Max" step="1" value="@level"
+                   @oninput="e => SetLevel(e.Value)" />
+        </label>
+    }
+    <div class="picker-desc">@Choice.Entry.Description</div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public BotChoice Choice { get; set; } = new();
+    [Parameter] public EventCallback ChoiceChanged { get; set; }
+
+    public static string CategoryName(PlayerCategory c) => c switch
+    {
+        PlayerCategory.Random => "Random",
+        PlayerCategory.Computer => "Computer",
+        _ => "AI",
+    };
+
+    private async Task Pick(PlayerRegistry.Entry e)
+    {
+        if (Choice.Id != e.Id) { Choice.Id = e.Id; Choice.Level = null; }
+        await ChoiceChanged.InvokeAsync();
+    }
+
+    private async Task SetLevel(object? value)
+    {
+        if (int.TryParse(value?.ToString(), out var l)) Choice.Level = l;
+        await ChoiceChanged.InvokeAsync();
+    }
+}

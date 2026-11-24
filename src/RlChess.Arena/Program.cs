@@ -9,7 +9,7 @@ using ChessGame = RlChess.Engine.Game;
 //
 //   dotnet run --project src/RlChess.Arena -c Release -- --games 1000 --p1 random --p2 random --pgn games.pgn --threads all
 //
-// Players are looked up by id in PlayerRegistry (see src/RlChess.Engine/Players/PlayerRegistry.cs).
+// Players are looked up in PlayerRegistry (src/RlChess.Players/PlayerRegistry.cs): "id" or "id:level".
 
 // "perft <depth> [fen]": count move sequences (checks move generation and measures speed).
 if (args.Length >= 2 && args[0] == "perft")
@@ -61,15 +61,17 @@ for (int i = 0; i < args.Length; i++)
     }
 }
 
-IPlayer Create(string id, int offset)
+IPlayer Create(string spec, int offset)
 {
+    if (!PlayerRegistry.TryParse(spec, out var entry, out var level, out var error)) throw new ArgumentException(error);
     // Seeded random players get distinct, reproducible seeds (per game, so threads don't matter).
-    if (seed is int s && id.Equals("random", StringComparison.OrdinalIgnoreCase)) return new RandomPlayer(unchecked(s * 1_000_003 + offset));
-    var entry = PlayerRegistry.Find(id);
-    if (entry is null)
-        throw new ArgumentException($"Unknown player '{id}'. Known: {string.Join(", ", PlayerRegistry.All.Select(e => e.Id))}");
-    return entry.Create();
+    if (seed is int s && entry.Category == PlayerCategory.Random && entry.Id == "random")
+        return new RandomPlayer(unchecked(s * 1_000_003 + offset));
+    return entry.CreatePlayer(level);
 }
+
+string Label(string spec) =>
+    PlayerRegistry.TryParse(spec, out var e, out var l, out _) ? e.Label(l) : spec;
 
 IPlayer p1, p2;
 try
@@ -84,9 +86,9 @@ catch (ArgumentException e)
 }
 
 threads = Math.Clamp(threads, 1, Math.Max(1, games));
-Console.WriteLine($"Arena: {p1.Name} (P1) vs {p2.Name} (P2), {games} games, alternating colours, {threads} thread(s).");
+Console.WriteLine($"Arena: {Label(p1Id)} (P1) vs {Label(p2Id)} (P2), {games} games, alternating colours, {threads} thread(s).");
 
-bool seededRandom(string id) => seed is not null && id.Equals("random", StringComparison.OrdinalIgnoreCase);
+bool seededRandom(string spec) => seed is not null && PlayerRegistry.TryParse(spec, out var e, out _, out _) && e.Id == "random";
 var results = new ChessGame[games];
 int finished = 0;
 var sw = Stopwatch.StartNew();
@@ -131,7 +133,7 @@ for (int g = 0; g < games; g++)
         winReasons[r.Reason] = winReasons.GetValueOrDefault(r.Reason) + 1;
     }
 
-    pgn?.Append(game.ToPgn(p1White ? $"{p1.Name} (P1)" : $"{p2.Name} (P2)", p1White ? $"{p2.Name} (P2)" : $"{p1.Name} (P1)",
+    pgn?.Append(game.ToPgn(p1White ? $"{Label(p1Id)} (P1)" : $"{Label(p2Id)} (P2)", p1White ? $"{Label(p2Id)} (P2)" : $"{Label(p1Id)} (P1)",
         eventName: "rlChess Arena")).Append('\n');
 }
 
@@ -140,8 +142,8 @@ double secs = Math.Max(sw.Elapsed.TotalSeconds, 1e-9);
 
 Console.WriteLine();
 Console.WriteLine($"Results after {games} games:");
-Console.WriteLine($"  {p1.Name} (P1) wins: {p1Wins,6}  ({100.0 * p1Wins / games:F1}%)");
-Console.WriteLine($"  {p2.Name} (P2) wins: {p2Wins,6}  ({100.0 * p2Wins / games:F1}%)");
+Console.WriteLine($"  {Label(p1Id)} (P1) wins: {p1Wins,6}  ({100.0 * p1Wins / games:F1}%)");
+Console.WriteLine($"  {Label(p2Id)} (P2) wins: {p2Wins,6}  ({100.0 * p2Wins / games:F1}%)");
 Console.WriteLine($"  Draws:            {draws,6}  ({100.0 * draws / games:F1}%)");
 foreach (var (reason, count) in drawReasons.OrderByDescending(kv => kv.Value))
     Console.WriteLine($"    {GameResult.Draw(reason).ReasonText}: {count}");
@@ -149,7 +151,7 @@ foreach (var (reason, count) in winReasons.OrderByDescending(kv => kv.Value))
     Console.WriteLine($"  Decisive by {GameResult.Draw(reason).ReasonText.ToLowerInvariant()}: {count}");
 var elo = EloEstimate(p1Wins, draws, p2Wins);
 Console.WriteLine(elo is var (diff, margin)
-    ? $"  Elo difference:   {diff:+0;-0;0} ± {margin:0} for {p1.Name} (P1), 95% confidence"
+    ? $"  Elo difference:   {diff:+0;-0;0} ± {margin:0} for {Label(p1Id)} (P1), 95% confidence"
     : "  Elo difference:   can't estimate (one side won or lost every game)");
 Console.WriteLine($"  Average length:   {(double)totalPlies / games / 2:F1} moves ({(double)totalPlies / games:F1} half-moves)");
 Console.WriteLine($"  Speed:            {games / secs:F1} games/sec ({secs:F2} s total)");
@@ -185,13 +187,15 @@ static void PrintHelp()
 
         Options:
           -n, --games <N>     number of games (default 100)
-          --p1 <id>           first player (default random)
-          --p2 <id>           second player (default random)
+          --p1 <id[:level]>   first player, e.g. random or minimax:4 (default random)
+          --p2 <id[:level]>   second player (default random)
           --pgn <file>        save all games to a PGN file
           --fen <fen>         start every game from this position
           --max-plies <N>     declare a draw after this many half-moves (default 1000)
           --seed <N>          seed for random players, for reproducible runs
           -t, --threads <N>   play games in parallel on N CPU cores ("all" = every core)
         """);
-    Console.WriteLine("Players: " + string.Join(", ", PlayerRegistry.All.Select(e => e.Id)));
+    Console.WriteLine("Players:");
+    foreach (var e in PlayerRegistry.All)
+        Console.WriteLine($"  {e.Id,-12} {e.Category,-9} {(e.Levels is { } r ? $"levels {r.Min}-{r.Max} (default {r.Default})" : "no levels"),-28} {e.Description}");
 }

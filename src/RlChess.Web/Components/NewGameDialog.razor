@@ -1,0 +1,83 @@
+@using RlChess.Web.Game
+
+<div class="modal-backdrop" @onclick="Cancel">
+    <div class="modal" @onclick:stopPropagation="true" role="dialog" aria-label="New game">
+        <h2>New game</h2>
+
+        <div class="segmented" role="tablist">
+            @Tab(GameMode.VsComputer, "vs Computer")
+            @Tab(GameMode.TwoPlayers, "Two players")
+            @Tab(GameMode.ComputerVsComputer, "Computer vs computer", "Comp. vs comp.")
+        </div>
+
+        @switch (_s.Mode)
+        {
+            case GameMode.VsComputer:
+                <div class="field-label">Opponent</div>
+                <PlayerPicker Choice="_s.Opponent" ChoiceChanged="StateHasChanged" />
+                <div class="field-label">Play as</div>
+                <div class="colors">
+                    <button class="color-choice @(_s.Color == "white" ? "chosen" : "")" title="White" @onclick='() => _s.Color = "white"'>
+                        <span class="piece wK"></span>
+                    </button>
+                    <button class="color-choice @(_s.Color == "random" ? "chosen" : "")" title="Random side" @onclick='() => _s.Color = "random"'>
+                        <span class="piece half"></span>
+                    </button>
+                    <button class="color-choice @(_s.Color == "black" ? "chosen" : "")" title="Black" @onclick='() => _s.Color = "black"'>
+                        <span class="piece bK"></span>
+                    </button>
+                </div>
+                break;
+            case GameMode.TwoPlayers:
+                <p class="mode-note">Pass and play on this device. Either player can offer a draw.</p>
+                break;
+            case GameMode.ComputerVsComputer:
+                <div class="field-label"><span class="side-dot white"></span> White</div>
+                <PlayerPicker Choice="_s.WhiteBot" ChoiceChanged="StateHasChanged" />
+                <div class="field-label"><span class="side-dot black"></span> Black</div>
+                <PlayerPicker Choice="_s.BlackBot" ChoiceChanged="StateHasChanged" />
+                break;
+        }
+
+        <div class="field-label">Clock</div>
+        <div class="chips-row">
+            @foreach (var (key, label, _) in GameSetup.ClockPresets)
+            {
+                <button type="button" class="chip @(_s.Clock == key ? "chosen" : "")" @onclick="() => _s.Clock = key">@label</button>
+            }
+        </div>
+        @if (_s.Clock == "custom")
+        {
+            <div class="custom-clock">
+                <label>Minutes <input type="number" min="0.25" max="180" step="0.25" @bind="_s.CustomMinutes" /></label>
+                <label>Increment (s) <input type="number" min="0" max="60" step="1" @bind="_s.CustomIncrement" /></label>
+            </div>
+        }
+
+        <div class="modal-actions">
+            <button class="btn" @onclick="Cancel">Cancel</button>
+            <button class="btn primary" @onclick="Play">Play</button>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public GameSetup Setup { get; set; } = new();
+    [Parameter] public EventCallback<GameSetup> OnPlay { get; set; }
+    [Parameter] public EventCallback OnCancel { get; set; }
+
+    private GameSetup _s = new();
+
+    protected override void OnInitialized() => _s = Setup.Clone();
+
+    private RenderFragment Tab(GameMode mode, string label, string? shortLabel = null) => __builder =>
+    {
+        <button type="button" role="tab" class="seg @(_s.Mode == mode ? "chosen" : "")" title="@label" @onclick="() => _s.Mode = mode">
+            @if (shortLabel is null) { @label }
+            else { <span class="long">@label</span><span class="short">@shortLabel</span> }
+        </button>
+    };
+
+    private Task Play() => OnPlay.InvokeAsync(_s);
+    private Task Cancel() => OnCancel.InvokeAsync();
+}
