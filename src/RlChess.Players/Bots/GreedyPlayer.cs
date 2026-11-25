@@ -17,7 +17,7 @@ public class GreedyPlayer : IPlayer
         
         for (int i = 0; i < 64; i++)
         {
-            Piece piece = position[i];
+            Piece piece = position[i]; 
 
             int pieceScore = piece.Type() switch
             {
