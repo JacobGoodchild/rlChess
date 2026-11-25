@@ -1,4 +1,5 @@
 using RlChess.Engine.Players;
+using RlChess.Players.Bots.Greedy;
 
 namespace RlChess.Players;
 
@@ -62,6 +63,7 @@ public static class PlayerRegistry
     public static readonly IReadOnlyList<Entry> All =
     [
         new("random", "Random", "Plays a random legal move.", PlayerCategory.Random, _ => new RandomPlayer()),
+        new("greedy", "Greedy", "Plays the best current move.", PlayerCategory.Computer, _ => new GreedyPlayer()),
 
         // Examples of what your own players could look like:
         // new("minimax", "Minimax", "Alpha-beta search.", PlayerCategory.Computer,
