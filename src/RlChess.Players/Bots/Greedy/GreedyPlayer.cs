@@ -96,7 +96,7 @@ public class GreedyPlayer : IPlayer
                     bestMoves.Clear();
                     bestMoves.Add(move);
 
-                    bestScore = score; // for future move analysis
+                    bestScore = score; // for future move analysis - new benchmark
                 }
             }
             else
