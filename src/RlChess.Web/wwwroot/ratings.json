@@ -1,16 +1,40 @@
 {
   "anchor": "random",
   "anchorRating": 400,
-  "updated": "2026-11-24",
-  "gamesPerPairing": 0,
+  "updated": "2026-11-26",
+  "gamesPerPairing": 100,
   "players": [
+    {
+      "spec": "greedy",
+      "name": "Greedy",
+      "rating": 735,
+      "margin": 45,
+      "games": 300,
+      "score": 0.698
+    },
+    {
+      "spec": "greedy-v2",
+      "name": "Greedy v2",
+      "rating": 727,
+      "margin": 45,
+      "games": 300,
+      "score": 0.685
+    },
+    {
+      "spec": "greedy-v1",
+      "name": "Greedy v1",
+      "rating": 585,
+      "margin": 43,
+      "games": 300,
+      "score": 0.448
+    },
     {
       "spec": "random",
       "name": "Random",
       "rating": 400,
       "margin": 0,
-      "games": 0,
-      "score": 0.5
+      "games": 300,
+      "score": 0.168
     }
   ]
 }

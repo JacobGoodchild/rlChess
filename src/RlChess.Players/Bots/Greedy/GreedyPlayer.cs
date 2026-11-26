@@ -45,7 +45,7 @@ public class GreedyPlayer : IPlayer
         var moves = position.GetLegalMoves();
         var sideToMove = position.SideToMove;
 
-        Move bestMove = new Move();
+        List<Move> bestMoves = new List<Move>();
         int bestScore;
         
         if (sideToMove == Color.White)
@@ -59,28 +59,65 @@ public class GreedyPlayer : IPlayer
 
         foreach (Move move in moves)
         {
+            int score = 0;
+            
             position.MakeMove(move);
-            int score = Evaluate(position);
-
+            
+            if (position.IsCheckmate) //check for checkmate
+            {
+                if (sideToMove == Color.White)
+                {
+                    score = 100000;
+                }
+                else
+                {
+                    score = -100000;
+                }
+            }
+            else if (position.IsStalemate) //check for stalemate
+            {
+                score = 0;
+            }
+            else //otherwise just evaluate normally
+            {
+                score = Evaluate(position);
+            }
+            
+            //now add equal move to list or clear the list and add the better move
+            
             if (sideToMove == Color.White)
             {
-                if (score > bestScore)
+                if (score == bestScore)
                 {
-                    bestMove = move;
-                    bestScore = score;
+                    bestMoves.Add(move);
+                }
+                else if (score > bestScore)
+                {
+                    bestMoves.Clear();
+                    bestMoves.Add(move);
+
+                    bestScore = score; // for future move analysis
                 }
             }
             else
             {
-                if (score < bestScore)
+                if (score == bestScore)
                 {
-                    bestMove = move;
+                    bestMoves.Add(move);
+                }
+                else if (score < bestScore)
+                {
+                    bestMoves.Clear();
+                    bestMoves.Add(move);
+
                     bestScore = score;
                 }
             }
+
             position.UndoMove();
         }
-
-        return bestMove;
+        
+        return bestMoves[_random.Next(0, bestMoves.Count)];
+        
     }
 }

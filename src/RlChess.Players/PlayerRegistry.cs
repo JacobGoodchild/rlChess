@@ -65,6 +65,8 @@ public static class PlayerRegistry
         new("random", "Random", "Plays a random legal move.", PlayerCategory.Random, _ => new RandomPlayer()),
         new("greedy", "Greedy", "Plays the best current move.", PlayerCategory.Computer, _ => new GreedyPlayer()),
         new("greedy-v1", "Greedy", "Aggressively grabs any material it can.", PlayerCategory.Computer, _ => new Frozen.Greedy_v1.GreedyPlayer(), Version: "v1"),
+        new("greedy-v2", "Greedy", "Aggressive but decisive.",PlayerCategory.Computer, _ => new Frozen.Greedy_v2.GreedyPlayer(), Version: "v2"),
+        
 
         // Examples of what your own players could look like:
         // new("minimax", "Minimax", "Alpha-beta search.", PlayerCategory.Computer,
