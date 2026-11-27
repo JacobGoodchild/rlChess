@@ -100,9 +100,9 @@ Read this first. It's the hand-over log between work sessions.
   only has Random (400) until the owner has bots.
 - **Analysis**: `IAnalysisEngine` (engine) with `PlayerAnalysis` (a bot that reports a Score) and
   `Services/StockfishEngine` (UCI over `wwwroot/js/engine.js`: a blob worker that `importScripts`
-  stockfish-19-lite-single.js from jsDelivr, wasm URL passed after `#`). One analysis at a time
+  stockfish-19-lite-single.js from unpkg (jsDelivr is only a fallback: it refuses npm packages over 150 MB, and this one is ~205 MB), wasm URL passed after `#`). One analysis at a time
   (SemaphoreSlim); cancel = `stop` then wait for `bestmove`. `Services/Analysis` picks the source.
-  The sandbox can't reach jsDelivr: local/live tests serve the identical npm files via Playwright
+  Local tests serve the identical npm files via Playwright
   `page.route` (files in the scratchpad `sf/`, downloaded from unpkg).
 - **Eval bar**: `Components/EvalBar.razor`; Home's `MaybeStartEval` (after each render) analyses the
   shown position if it changed; uses the review's evals when a review covers the position.

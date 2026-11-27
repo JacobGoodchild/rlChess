@@ -79,7 +79,7 @@
                                     <button class="chip small @(Prefs.AnalysisSource == e.Id ? "chosen" : "")" @onclick="() => Prefs.SetAnalysisSource(e.Id)">@e.FullName</button>
                                 }
                             </div>
-                            <div class="credit">Stockfish (GPLv3, <a href="https://stockfishchess.org" target="_blank" rel="noopener">stockfishchess.org</a>) is downloaded from jsDelivr only while these are on.
+                            <div class="credit">Stockfish (GPLv3, <a href="https://stockfishchess.org" target="_blank" rel="noopener">stockfishchess.org</a>) is downloaded (from unpkg) only while these are on.
                                 @if (AnalysisBots.All.Count == 0) { <span>Your own bots appear here once they report a score.</span> }
                             </div>
                         }

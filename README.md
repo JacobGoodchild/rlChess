@@ -253,7 +253,7 @@ copy you installed, and the website downloads the official build at runtime (see
 These need something that can judge positions, so the website uses **Stockfish** like the big
 chess sites do: the official "lite, single-threaded" WebAssembly build of Stockfish 19
 ([stockfish.js](https://github.com/nmrugg/stockfish.js), npm package `stockfish@19.0.1`), running in a
-background worker so the page never freezes. It's only downloaded (about 1.8 MB, from jsDelivr) when
+background worker so the page never freezes. It's only downloaded (about 1.8 MB, from the unpkg npm CDN) when
 you switch on the evaluation bar or game review.
 
 **Licence:** Stockfish is GPLv3. It isn't copied into this repository and isn't changed: your

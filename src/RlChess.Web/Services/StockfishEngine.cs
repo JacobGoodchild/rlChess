@@ -39,7 +39,7 @@ public sealed class StockfishEngine(IJSRuntime js) : IAnalysisEngine, IAsyncDisp
 
     private async Task Start()
     {
-        _module = await js.InvokeAsync<IJSObjectReference>("import", "./js/engine.js");
+        _module = await js.InvokeAsync<IJSObjectReference>("import", "./js/engine.js?v=2");
         _self = DotNetObjectReference.Create(this);
         _worker = await _module.InvokeAsync<IJSObjectReference>("createStockfish", _self, null);
         await Command("uci", "uciok", TimeSpan.FromSeconds(40));
