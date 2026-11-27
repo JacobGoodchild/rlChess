@@ -1,5 +1,6 @@
 using RlChess.Engine.Players;
 using RlChess.Players.Bots.Greedy;
+using RlChess.Players.Bots.Minimax;
 
 namespace RlChess.Players;
 
@@ -66,7 +67,8 @@ public static class PlayerRegistry
         new("greedy", "Greedy", "Plays the best current move.", PlayerCategory.Computer, _ => new GreedyPlayer()),
         new("greedy-v1", "Greedy", "Aggressively grabs any material it can.", PlayerCategory.Computer, _ => new Frozen.Greedy_v1.GreedyPlayer(), Version: "v1"),
         new("greedy-v2", "Greedy", "Aggressive but decisive.",PlayerCategory.Computer, _ => new Frozen.Greedy_v2.GreedyPlayer(), Version: "v2"),
-        
+        new("minimax", "Minimax", "Looks ahead several moves.", PlayerCategory.Computer, level => new MinimaxPlayer(level), new LevelRange(1, 4, 2)),
+        new("minimax-v1", "Minimax", "Unoptimised minimax.", PlayerCategory.Computer, level => new Frozen.Minimax_v1.MinimaxPlayer(level), new LevelRange(1, 4, 2), Version: "v1"),
 
         // Examples of what your own players could look like:
         // new("minimax", "Minimax", "Alpha-beta search.", PlayerCategory.Computer,
