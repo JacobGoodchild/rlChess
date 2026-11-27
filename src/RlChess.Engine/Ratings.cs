@@ -17,8 +17,17 @@ public static class Ratings
     /// <param name="games">Each game: player A, player B, and A's score (1, 0.5 or 0).</param>
     /// <param name="anchor">The player whose rating is fixed at <paramref name="anchorRating"/>.</param>
     public static IReadOnlyList<Rated> Compute(int playerCount, IEnumerable<(int A, int B, double ScoreA)> games,
-        int anchor, double anchorRating = RandomAnchor)
+        int anchor, double anchorRating = RandomAnchor) =>
+        Compute(playerCount, games, new Dictionary<int, double> { [anchor] = anchorRating });
+
+    /// <summary>
+    /// Same, with several players' ratings fixed (e.g. Stockfish at calibrated levels). Everyone else
+    /// is rated relative to them. With one fixed player this is the same as an anchor.
+    /// </summary>
+    public static IReadOnlyList<Rated> Compute(int playerCount, IEnumerable<(int A, int B, double ScoreA)> games,
+        IReadOnlyDictionary<int, double> fixedRatings)
     {
+        if (fixedRatings.Count == 0) throw new ArgumentException("At least one player's rating must be fixed.", nameof(fixedRatings));
         // Results per pair: games played and points scored by the lower index.
         var played = new double[playerCount, playerCount];
         var points = new double[playerCount, playerCount];
@@ -42,11 +51,14 @@ public static class Ratings
 
         const double scale = 400 / 2.302585092994046; // 400 / ln(10)
         var r = new double[playerCount];
+        double start = fixedRatings.Values.Average();
+        for (int i = 0; i < playerCount; i++) r[i] = fixedRatings.TryGetValue(i, out var f) ? f : start;
         for (int iter = 0; iter < 2000; iter++)
         {
             double maxStep = 0;
             for (int i = 0; i < playerCount; i++)
             {
+                if (fixedRatings.ContainsKey(i)) continue;
                 double gradient = 0, curvature = 0;
                 for (int j = 0; j < playerCount; j++)
                 {
@@ -63,7 +75,6 @@ public static class Ratings
             if (maxStep < 1e-6) break;
         }
 
-        double shift = anchorRating - r[anchor];
         var result = new List<Rated>();
         for (int i = 0; i < playerCount; i++)
         {
@@ -74,8 +85,8 @@ public static class Ratings
                 double e = Expected(r[i] - r[j]);
                 info += played[i, j] * e * (1 - e);
             }
-            double margin = i == anchor ? 0 : info > 0 ? 1.96 * scale / Math.Sqrt(info) : double.PositiveInfinity;
-            result.Add(new Rated(i, r[i] + shift, margin, gamesOf[i], gamesOf[i] == 0 ? 0 : scoreOf[i] / gamesOf[i]));
+            double margin = fixedRatings.ContainsKey(i) ? 0 : info > 0 ? 1.96 * scale / Math.Sqrt(info) : double.PositiveInfinity;
+            result.Add(new Rated(i, r[i], margin, gamesOf[i], gamesOf[i] == 0 ? 0 : scoreOf[i] / gamesOf[i]));
         }
         return result;
     }

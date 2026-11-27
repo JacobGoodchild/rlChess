@@ -16,6 +16,8 @@ public sealed class RatingsFile
     public double AnchorRating { get; init; } = Engine.Ratings.RandomAnchor;
     public DateTime Updated { get; init; } = DateTime.UtcNow;
     public int GamesPerPairing { get; init; }
+    /// <summary>True if anchored to calibrated Stockfish levels (engine-scale ratings), false if Random = 400.</summary>
+    public bool EngineScale { get; init; }
     public List<Row> Players { get; init; } = new();
 
     /// <summary>The row for a player at a level (falls back to the player's default-level row), or null if unrated.</summary>
@@ -35,6 +37,7 @@ public sealed class RatingsFile
             w.WriteNumber("anchorRating", AnchorRating);
             w.WriteString("updated", Updated.ToString("yyyy-MM-dd"));
             w.WriteNumber("gamesPerPairing", GamesPerPairing);
+            w.WriteBoolean("engineScale", EngineScale);
             w.WriteStartArray("players");
             foreach (var r in Players)
             {
@@ -77,6 +80,7 @@ public sealed class RatingsFile
                 AnchorRating = root.TryGetProperty("anchorRating", out var ar) ? ar.GetDouble() : Engine.Ratings.RandomAnchor,
                 Updated = root.TryGetProperty("updated", out var u) && DateTime.TryParse(u.GetString(), out var d) ? d : DateTime.MinValue,
                 GamesPerPairing = root.TryGetProperty("gamesPerPairing", out var gp) ? gp.GetInt32() : 0,
+                EngineScale = root.TryGetProperty("engineScale", out var es) && es.ValueKind == JsonValueKind.True,
                 Players = rows,
             };
         }

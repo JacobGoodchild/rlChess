@@ -169,7 +169,7 @@ Don't edit frozen copies; freeze again as `v2` when you want a new snapshot.
 dotnet run --project src/RlChess.Arena -c Release -- ratings --games 20
 ```
 
-Every registered bot (at its default level) plays every other bot, half the games with each colour.
+Every registered bot of yours (at its default level) plays every other bot, half the games with each colour.
 `--games` is per pairing; `--players random,minimax:2,minimax:4,minimax-v1` picks who plays (handy to
 rate several levels). It prints a table and saves `src/RlChess.Web/wwwroot/ratings.json`; push it and
 the website shows the ratings on the bot cards (bots not in the file show "unrated").
@@ -189,6 +189,64 @@ for several seconds freezes the page. If yours is slow, implement `IAsyncPlayer`
 website can stop it when it runs out of time (it cancels the `CancellationToken` it passes you;
 return your best move so far when that happens). The think-time limit is in the website's settings;
 in games with a clock, the clock is the limit.
+
+## How strong is my bot? (Stockfish as a reference opponent)
+
+Ratings from the `ratings` command are only relative to Random. To tie your bots to something
+real, play them against **Stockfish at a limited, calibrated strength**. It appears as its own
+**Reference** group (website) and as `stockfish:<Elo>` (Arena), separate from your bots:
+
+- `stockfish:1500`: Stockfish's `UCI_LimitStrength` + `UCI_Elo` setting, calibrated from 1320 to 3190.
+- `stockfish-skill:5`: Stockfish's `Skill Level` (0–20) for weaker play. **Uncalibrated**: no rating
+  can be worked out from games against it.
+
+**On the website** choose *Stockfish* in the bot gallery (vs computer, computer vs computer, or the
+Arena page) and set its Elo with the slider. It runs in the browser like the analysis engine. In the
+Arena page, a match between your bot and calibrated Stockfish shows an *Estimated rating*.
+
+**In the console Arena** Stockfish must be installed on your computer (it isn't part of this repository).
+On Linux Mint / Ubuntu:
+
+```bash
+sudo apt install stockfish
+```
+
+It installs to `/usr/games/stockfish`, which the Arena finds by itself (otherwise use
+`--stockfish-path /path/to/stockfish` or the `STOCKFISH_PATH` variable). Then:
+
+```bash
+dotnet run --project src/RlChess.Arena -c Release -- --games 20 --p1 minimax:3 --p2 stockfish:1320
+```
+
+After the results it prints *Estimated rating for Minimax (level 3): 1180 ± 150*. To test against
+several levels at once and combine everything into one estimate:
+
+```bash
+dotnet run --project src/RlChess.Arena -c Release -- strength minimax:3 --levels 1320,1500,1700 --games 20
+```
+
+And to anchor the bot cards to Stockfish instead of Random, add Stockfish levels to the round robin
+(they keep their calibrated ratings fixed and everyone else is rated against them; Random then gets
+its own rating instead of the fixed 400):
+
+```bash
+dotnet run --project src/RlChess.Arena -c Release -- ratings --games 20 --stockfish 1320,1500
+```
+
+Stockfish thinks **1 second per move** (`--sf-time <ms>` to change it in the console). Each game runs
+its own Stockfish program, so `--threads` still works.
+
+**What the number means:** a *performance rating*: the rating at which your bot's score against those
+Stockfish levels would be expected, with a rough 95% range (it narrows with more games). It's on the
+**engine scale** (like the CCRL computer rating lists), **not** a chess.com or lichess rating, which
+are measured against people and tend to be different. Caveats: Stockfish's Elo levels were calibrated
+at long time controls (120 s + 1 s per move), so at 1 s per move it may play somewhat *below* its
+label, making your bot look a bit stronger than it is; the website uses a lighter build ("lite"
+network) that can be weaker still. Scores of 0% or 100% say little: pick levels where your bot scores
+between about 20% and 80%.
+
+**Licence:** Stockfish is GPLv3 and is never copied into this MIT repository: the console uses the
+copy you installed, and the website downloads the official build at runtime (see below).
 
 ## Analysis engine (evaluation bar and game review)
 

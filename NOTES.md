@@ -2,7 +2,7 @@
 
 Read this first. It's the hand-over log between work sessions.
 
-## Status (end of session 4)
+## Status (end of session 5)
 
 ### Engine (`src/RlChess.Engine`)
 - 64-square board with pre-computed tables; pseudo-legal generation + legality filter with a
@@ -114,6 +114,25 @@ Read this first. It's the hand-over log between work sessions.
   a–e.tsv (CC0). Loaded lazily by `Services/Openings`.
 - Fixed: the new-game dialog's "Starting from your set-up position" note showed every time
   (a string parameter was passed without `@`, so it got the literal text).
+
+### Session 5: Stockfish as a calibrated reference opponent
+- The owner's bots: `Players/Bots/{Greedy,Minimax}`, frozen `Greedy_v1/v2`, `Minimax_v1`. **Don't edit them.**
+- `PlayerCategory.Reference` with registry entries `stockfish` (levels = UCI_Elo 1320–3190, step 10,
+  `LevelRange.Word = "Elo"`) and `stockfish-skill` (Skill Level 0–20, uncalibrated).
+  `PlayerRegistry.StockfishFactory` is set by each host (console: `StockfishProcess.Register`, web:
+  `Program.cs` → `WebStockfishPlayer`). `PlayerRegistry.OwnBots` excludes Reference (used by `ratings`
+  default and the "Analysis by" list). `Entry.KnownRating(level)` = the Elo for calibrated Stockfish.
+- Engine: `StockfishStrength` (UCI setup commands, `go movetime`, bestmove parsing), `RatingEstimate`
+  (max-likelihood performance vs known ratings, half a draw prior, ± 95%, `OffTheScale` flag),
+  `Ratings.Compute(..., fixedRatings)` for several anchors.
+- Console: `StockfishProcess` (one process per player object, Threads=1, reports thinking),
+  `Shared.TakeStockfishOptions` (`--stockfish-path`, `--sf-time`, any command), `strength` command,
+  `ratings --stockfish 1320,1500` (Stockfish levels become the fixed anchors; Random floats). Main match
+  prints an estimated rating when one side is calibrated Stockfish. Missing Stockfish → install help.
+- Web: `StockfishEngine.PlayAsync` (set strength each move, `go movetime 1000`), `StockfishPool`
+  (2 workers shared by all Stockfish players), Arena page shows `ArenaSession.StrengthEstimate`.
+- Tests: `StockfishTests.cs`; the real-engine test uses `[StockfishInstalledFact]` (skipped if not
+  installed; CI doesn't install it). Sandbox: `apt-get install stockfish` works (Stockfish 16).
 
 ## Decisions / gotchas
 - Work straight on `main`; only push green builds.

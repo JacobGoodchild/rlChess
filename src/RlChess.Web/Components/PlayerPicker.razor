@@ -7,7 +7,12 @@
     {
         var entries = PlayerRegistry.InCategory(category).ToList();
         <div class="gal-group">
-            <div class="gal-cat">@CategoryName(category)</div>
+            <div class="gal-cat">@CategoryName(category)
+                @if (category == PlayerCategory.Reference)
+                {
+                    <span class="gal-note" title="Ratings here are on the engine scale (like the CCRL lists), not chess.com or lichess ratings.">· to measure your bots against, not one of yours</span>
+                }
+            </div>
             @if (entries.Count == 0)
             {
                 <div class="none-yet">none yet</div>
@@ -24,8 +29,9 @@
                                 <span class="bot-name">@e.DisplayName @if (e.Version is not null) { <span class="ver">@e.Version</span> }</span>
                                 <span class="bot-desc">@e.Description</span>
                                 <span class="bot-meta">
-                                    <span class="rating @(RatingOf(e, chosen ? Choice.Level : null) is null ? "unrated" : "")">@RatingText(e, chosen ? Choice.Level : null)</span>
-                                    @if (e.Levels is { } r) { <span>· levels @r.Min–@r.Max</span> }
+                                    <span class="rating @(RatingText(e, chosen ? Choice.Level : null).StartsWith("rated") ? "" : "unrated")"
+                                          title="@RatingTip(e)">@RatingText(e, chosen ? Choice.Level : null)</span>
+                                    @if (e.Levels is { Word: not "Elo" } r) { <span>· @(r.Word == "level" ? "levels" : r.Word) @r.Min–@r.Max</span> }
                                 </span>
                             </span>
                         </button>
@@ -38,8 +44,8 @@
     {
         int level = Choice.EffectiveLevel ?? range.Default;
         <label class="level-row">
-            <span class="level-label">Level <b>@level</b></span>
-            <input type="range" min="@range.Min" max="@range.Max" step="1" value="@level"
+            <span class="level-label">@(char.ToUpperInvariant(range.Word[0]) + range.Word[1..]) <b>@level</b></span>
+            <input type="range" min="@range.Min" max="@range.Max" step="@range.Step" value="@level"
                    @oninput="e => SetLevel(e.Value)" />
         </label>
     }
@@ -55,13 +61,28 @@
     {
         PlayerCategory.Random => "Random",
         PlayerCategory.Computer => "Computer",
+        PlayerCategory.Reference => "Reference",
         _ => "AI",
     };
 
     private RatingsFile.Row? RatingOf(PlayerRegistry.Entry e, int? level) => Ratings.File?.Find(e, level);
 
-    private string RatingText(PlayerRegistry.Entry e, int? level) =>
-        RatingOf(e, level) is { } r ? $"rated {r.Rating:0}" : "unrated";
+    private string RatingText(PlayerRegistry.Entry e, int? level)
+    {
+        if (e.KnownRating(level) is double known) return $"rated {known:0}";
+        if (e.Id == PlayerRegistry.StockfishSkillId) return "uncalibrated";
+        return RatingOf(e, level) is { } r ? $"rated {r.Rating:0}" : "unrated";
+    }
+
+    private string? RatingTip(PlayerRegistry.Entry e)
+    {
+        if (e.Id == PlayerRegistry.StockfishId) return "Stockfish's calibrated strength (UCI_Elo): an engine-scale rating, not a chess.com or lichess rating. The website version is a lighter build and thinks 1 s per move, so it may play a bit below this.";
+        if (e.Id == PlayerRegistry.StockfishSkillId) return "Stockfish's Skill Level setting: weaker play, but not calibrated, so no rating.";
+        if (Ratings.File is not { } f || RatingOf(e, null) is null) return null;
+        return f.EngineScale
+            ? "From the Arena's ratings command, anchored to Stockfish: an engine-scale rating, not a chess.com or lichess rating."
+            : "From the Arena's ratings command: relative to Random (fixed at 400), not a chess.com or lichess rating.";
+    }
 
     private async Task Pick(PlayerRegistry.Entry e)
     {

@@ -112,6 +112,40 @@ public sealed class StockfishEngine(IJSRuntime js) : IAnalysisEngine, IAsyncDisp
         }
     }
 
+    /// <summary>
+    /// Plays a move at a set strength (Stockfish as an opponent). Reports its search as it goes.
+    /// When cancelled, returns its best move so far.
+    /// </summary>
+    public async Task<Move> PlayAsync(Position position, StockfishStrength strength, Action<PositionEval>? progress, CancellationToken cancellationToken)
+    {
+        await _lock.WaitAsync(cancellationToken);
+        try
+        {
+            if (Error is not null) throw new InvalidOperationException(Error);
+            await EnsureStarted();
+            foreach (var c in strength.SetupCommands()) await Send(c);
+            await Command("isready", "readyok", TimeSpan.FromSeconds(10));
+            _position = position.Clone();
+            _progress = progress;
+            _lines.Clear();
+            _latest = null;
+            Depth = 0;
+            _done = new TaskCompletionSource<PositionEval>(TaskCreationOptions.RunContinuationsAsynchronously);
+            await Send($"position fen {position.ToFen()}");
+            await Send(strength.GoCommand());
+            await using (cancellationToken.Register(() => _ = Send("stop")))
+            {
+                var eval = await _done.Task;
+                return eval.BestMove ?? throw new InvalidOperationException("Stockfish didn't give a move.");
+            }
+        }
+        finally
+        {
+            _progress = null;
+            _lock.Release();
+        }
+    }
+
     [JSInvokable]
     public void OnEngineLine(string line)
     {

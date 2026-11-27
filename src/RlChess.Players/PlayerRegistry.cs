@@ -1,3 +1,4 @@
+using RlChess.Engine;
 using RlChess.Engine.Players;
 using RlChess.Players.Bots.Greedy;
 using RlChess.Players.Bots.Minimax;
@@ -13,10 +14,14 @@ public enum PlayerCategory
     Computer,
     /// <summary>Learned players, e.g. trained by reinforcement learning.</summary>
     AI,
+    /// <summary>Reference opponents to measure your bots against (Stockfish at a set strength). Never "your" bots.</summary>
+    Reference,
 }
 
 /// <summary>The difficulty levels a player supports, e.g. 1 to 10, starting at <see cref="Default"/>.</summary>
-public sealed record LevelRange(int Min, int Max, int Default)
+/// <param name="Step">Slider step on the website (e.g. 10 for ratings).</param>
+/// <param name="Word">What a level is called in labels: "level 4", "Elo 1500".</param>
+public sealed record LevelRange(int Min, int Max, int Default, int Step = 1, string Word = "level")
 {
     public int Clamp(int level) => Math.Clamp(level, Min, Max);
 }
@@ -58,10 +63,43 @@ public static class PlayerRegistry
 
         /// <summary>"Minimax" or "Minimax (level 4)".</summary>
         public string Label(int? level) =>
-            Levels is null ? FullName : $"{FullName} (level {Levels.Clamp(level ?? Levels.Default)})";
+            Levels is null ? FullName : $"{FullName} ({Levels.Word} {Levels.Clamp(level ?? Levels.Default)})";
+
+        /// <summary>The rating of this player at a level when it's known for certain (calibrated Stockfish), else null.</summary>
+        public double? KnownRating(int? level) => Id == StockfishId && Levels is { } r ? r.Clamp(level ?? r.Default) : null;
     }
 
-    public static readonly IReadOnlyList<Entry> All =
+    public const string StockfishId = "stockfish", StockfishSkillId = "stockfish-skill";
+
+    /// <summary>
+    /// How to make a Stockfish opponent on this platform. The website and the console Arena each set
+    /// this at start-up (in the browser it's a background worker; on a PC it's the installed program).
+    /// Null = Stockfish isn't available here.
+    /// </summary>
+    public static Func<StockfishStrength, IPlayer>? StockfishFactory { get; set; }
+
+    private static IPlayer MakeStockfish(StockfishStrength s) =>
+        StockfishFactory?.Invoke(s) ?? throw new InvalidOperationException("Stockfish isn't available here.");
+
+    /// <summary>The reference opponents (always listed after your bots).</summary>
+    private static readonly Entry[] Reference =
+    [
+        new(StockfishId, "Stockfish", "Calibrated strength (UCI_Elo), on the engine rating scale.", PlayerCategory.Reference,
+            elo => MakeStockfish(StockfishStrength.AtElo(elo)),
+            new LevelRange(StockfishStrength.MinElo, StockfishStrength.MaxElo, 1500, Step: 10, Word: "Elo")),
+        new(StockfishSkillId, "Stockfish skill", "Weaker settings (Skill Level 0–20). Uncalibrated: no rating.", PlayerCategory.Reference,
+            skill => MakeStockfish(StockfishStrength.AtSkill(skill)),
+            new LevelRange(StockfishStrength.MinSkill, StockfishStrength.MaxSkill, 5, Word: "skill")),
+    ];
+
+    /// <summary>Every player: your bots first, then the reference opponents.</summary>
+    public static IReadOnlyList<Entry> All => _all ??= Own.Concat(Reference).ToList();
+    private static IReadOnlyList<Entry>? _all;
+
+    /// <summary>Your bots (everything except the reference opponents).</summary>
+    public static IEnumerable<Entry> OwnBots => All.Where(e => e.Category != PlayerCategory.Reference);
+
+    private static readonly IReadOnlyList<Entry> Own =
     [
         new("random", "Random", "Plays a random legal move.", PlayerCategory.Random, _ => new RandomPlayer()),
         new("greedy", "Greedy", "Plays the best current move.", PlayerCategory.Computer, _ => new GreedyPlayer()),

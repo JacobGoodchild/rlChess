@@ -2,6 +2,7 @@ using System.Diagnostics;
 using RlChess.Engine;
 using RlChess.Engine.Players;
 using RlChess.Players;
+using ChessGame = RlChess.Engine.Game;
 
 /// <summary>
 /// "ratings": every bot plays every other bot (both colours), then each gets a rating, with
@@ -13,7 +14,7 @@ static class RatingsCommand
     public static int Run(string[] args)
     {
         int gamesPerPair = 20, threads = Environment.ProcessorCount, maxPlies = 600;
-        string? playersArg = null, outPath = null;
+        string? playersArg = null, outPath = null, stockfishArg = null;
         for (int i = 0; i < args.Length; i++)
         {
             string Next() => i + 1 < args.Length ? args[++i] : throw new ArgumentException($"{args[i]} needs a value.");
@@ -21,6 +22,7 @@ static class RatingsCommand
             {
                 case "--games": gamesPerPair = Math.Max(2, int.Parse(Next())); break;
                 case "--players": playersArg = Next(); break;
+                case "--stockfish": stockfishArg = Next(); break;
                 case "--out": outPath = Next(); break;
                 case "--threads": var t = Next(); threads = t == "all" ? Environment.ProcessorCount : Math.Max(1, int.Parse(t)); break;
                 case "--max-plies": maxPlies = int.Parse(Next()); break;
@@ -31,7 +33,7 @@ static class RatingsCommand
 
         // Who plays: every registered bot at its default level, or the list given.
         var specs = playersArg is null
-            ? PlayerRegistry.All.Select(e => e.Spec(null)).ToList()
+            ? PlayerRegistry.OwnBots.Select(e => e.Spec(null)).ToList()
             : playersArg.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
         var players = new List<(string Spec, PlayerRegistry.Entry Entry, int? Level, string Name)>();
         foreach (var spec in specs)
@@ -43,12 +45,28 @@ static class RatingsCommand
             if (copies > 0) name += $" #{copies + 1}"; // the same bot twice: a sanity check, both should get the same rating
             players.Add((key, e, lvl, name));
         }
-        int anchor = players.FindIndex(p => p.Spec == "random");
-        if (anchor < 0)
+        // Stockfish levels (--stockfish 1320,1500) join as players with fixed, calibrated ratings.
+        foreach (var lvl in (stockfishArg ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
         {
-            var random = PlayerRegistry.Find("random")!;
-            players.Insert(0, ("random", random, null, random.Label(null)));
-            anchor = 0;
+            var spec = $"{PlayerRegistry.StockfishId}:{lvl}";
+            if (!PlayerRegistry.TryParse(spec, out var e, out var l, out var err)) { Console.Error.WriteLine(err); return 1; }
+            if (players.All(p => p.Spec != e.Spec(l))) players.Add((e.Spec(l), e, l, e.Label(l)));
+        }
+        // Fixed ratings: calibrated Stockfish levels if there are any (then everything is on the engine scale);
+        // otherwise Random at 400, as before.
+        var fixedRatings = new Dictionary<int, double>();
+        for (int i = 0; i < players.Count; i++)
+            if (players[i].Entry.KnownRating(players[i].Level) is double known) fixedRatings[i] = known;
+        if (fixedRatings.Count == 0)
+        {
+            int random = players.FindIndex(p => p.Spec == "random");
+            if (random < 0)
+            {
+                var r = PlayerRegistry.Find("random")!;
+                players.Insert(0, ("random", r, null, r.Label(null)));
+                random = 0;
+            }
+            fixedRatings[random] = Ratings.RandomAnchor;
         }
         if (players.Count < 2)
         {
@@ -71,25 +89,33 @@ static class RatingsCommand
         {
             var (a, b, aWhite) = schedule[i];
             IPlayer pa = players[a].Entry.CreatePlayer(players[a].Level), pb = players[b].Entry.CreatePlayer(players[b].Level);
-            var game = MatchRunner.PlayGame(aWhite ? pa : pb, aWhite ? pb : pa, maxPlies: maxPlies, recordSan: false);
+            ChessGame game;
+            try { game = MatchRunner.PlayGame(aWhite ? pa : pb, aWhite ? pb : pa, maxPlies: maxPlies, recordSan: false); }
+            finally { Shared.Dispose(pa); Shared.Dispose(pb); }
             results[i] = (a, b, MatchStats.ScoreFor(game.Result, aWhite));
             int n = Interlocked.Increment(ref done);
             if (schedule.Count >= 20 && n % Math.Max(1, schedule.Count / 10) == 0) Console.WriteLine($"  {n}/{schedule.Count} games...");
         });
 
-        var rated = Ratings.Compute(players.Count, results, anchor);
+        var rated = Ratings.Compute(players.Count, results, fixedRatings);
         Console.WriteLine();
         Console.WriteLine($"  {"#",-3} {"Player",-32} {"Rating",7} {"±",5} {"Games",6} {"Score",6}");
         int rank = 1;
         foreach (var r in rated.OrderByDescending(r => r.Rating))
         {
-            string margin = r.Index == anchor ? "fixed" : double.IsFinite(r.Margin) ? r.Margin.ToString("0") : "?";
+            string margin = fixedRatings.ContainsKey(r.Index) ? "fixed" : double.IsFinite(r.Margin) ? r.Margin.ToString("0") : "?";
             Console.WriteLine($"  {rank++,-3} {players[r.Index].Name,-32} {r.Rating,7:0} {margin,5} {r.Games,6} {r.Score * 100,5:0}%");
         }
-        Console.WriteLine($"  Random is fixed at {Ratings.RandomAnchor:0} so ratings stay comparable between runs. ({sw.Elapsed.TotalSeconds:0.0} s)");
+        bool engineScale = fixedRatings.Keys.Any(i => players[i].Entry.Id == PlayerRegistry.StockfishId);
+        Console.WriteLine(engineScale
+            ? $"  Anchored to Stockfish's calibrated levels: engine-scale ratings (not chess.com or lichess ratings). ({sw.Elapsed.TotalSeconds:0.0} s)"
+            : $"  Random is fixed at {Ratings.RandomAnchor:0} so ratings stay comparable between runs. ({sw.Elapsed.TotalSeconds:0.0} s)");
 
         var file = new RatingsFile
         {
+            Anchor = string.Join(",", fixedRatings.Keys.Select(i => players[i].Spec)),
+            AnchorRating = fixedRatings.Values.First(),
+            EngineScale = engineScale,
             GamesPerPairing = gamesPerPair,
             Players = rated.Where(r => players.FindIndex(p => p.Spec == players[r.Index].Spec) == r.Index) // first copy only
                 .OrderByDescending(r => r.Rating)

@@ -11,7 +11,23 @@ using ChessGame = RlChess.Engine.Game;
 //
 // Players are looked up in PlayerRegistry (src/RlChess.Players/PlayerRegistry.cs): "id" or "id:level".
 
+// Stockfish options apply to every command: --stockfish-path <file>, --sf-time <milliseconds per move>.
+args = Shared.TakeStockfishOptions(args);
+StockfishProcess.Register();
+try
+{
+    return Run(args);
+}
+catch (StockfishMissingException e)
+{
+    Console.Error.WriteLine(e.Message);
+    return 1;
+}
+
+static int Run(string[] args)
+{
 if (args.Length >= 2 && args[0] == "bench") return Bench.Run(args[1..]);
+if (args.Length >= 2 && args[0] == "strength") return StrengthCommand.Run(args[1..]);
 if (args.Length >= 1 && args[0] == "ratings") return RatingsCommand.Run(args[1..]);
 if (args.Length >= 1 && args[0] == "openings") return OpeningsCommand.Run(args[1..]);
 
@@ -83,11 +99,11 @@ IPlayer Create(string spec, int offset)
 string Label(string spec) =>
     PlayerRegistry.TryParse(spec, out var e, out var l, out _) ? e.Label(l) : spec;
 
-IPlayer p1, p2;
 try
 {
-    p1 = Create(p1Id, 0);
-    p2 = Create(p2Id, 1);
+    // Check both players can be made (this also finds Stockfish if it's used), then put them away.
+    Shared.Dispose(Create(p1Id, 0));
+    Shared.Dispose(Create(p2Id, 1));
 }
 catch (ArgumentException e)
 {
@@ -119,7 +135,7 @@ Parallel.For(0, games, new ParallelOptions { MaxDegreeOfParallelism = threads },
         if (games >= 20 && done % Math.Max(1, games / 10) == 0) Console.WriteLine($"  {done}/{games} games...");
         return local;
     },
-    _ => { });
+    local => { Shared.Dispose(local.P1); Shared.Dispose(local.P2); });
 
 var stats = new MatchStats();
 long totalPlies = 0;
@@ -157,6 +173,18 @@ foreach (var (reason, count) in winReasons.OrderByDescending(kv => kv.Value))
 Console.WriteLine(stats.Elo is var (diff, margin)
     ? $"  Elo difference:   {diff:+0;-0;0} ± {margin:0} for {Label(p1Id)} (P1), 95% confidence"
     : "  Elo difference:   can't estimate (one side won or lost every game)");
+// Against a player with a known rating (calibrated Stockfish): an estimate of the other one's rating.
+foreach (var (who, other, sign) in new[] { (p1Id, p2Id, 1), (p2Id, p1Id, -1) })
+{
+    if (!PlayerRegistry.TryParse(other, out var oe, out var ol, out _) || oe.KnownRating(ol) is not double known) continue;
+    if (PlayerRegistry.TryParse(who, out var we, out var wl, out _) && we.KnownRating(wl) is not null) continue;
+    var est = sign == 1
+        ? RatingEstimate.Performance(known, stats.Wins, stats.Draws, stats.Losses)
+        : RatingEstimate.Performance(known, stats.Losses, stats.Draws, stats.Wins);
+    if (est is null) continue;
+    Console.WriteLine($"  Estimated rating for {Label(who)}: {est}{(est.OffTheScale ? " (it won or lost every game, so it could be further out)" : "")}");
+    Console.WriteLine($"    Engine-scale rating, measured against {Label(other)}. Not a chess.com or lichess rating (see README).");
+}
 Console.WriteLine($"  Average length:   {(double)totalPlies / games / 2:F1} moves ({(double)totalPlies / games:F1} half-moves)");
 Console.WriteLine($"  Speed:            {games / secs:F1} games/sec ({secs:F2} s total)");
 
@@ -182,6 +210,8 @@ if (reportPath is not null)
 }
 return 0;
 
+}
+
 // --thinking: one line per move with what the player reported.
 static void PrintThinking(int gameNumber, MoveReport r)
 {
@@ -202,14 +232,18 @@ static void PrintHelp()
         Also: perft <depth> [fen]   count all move sequences to <depth> (speed/correctness check)
               bench <id[:level]> [--positions N] [--seed N]
                                     time how long a player takes per move (and positions/sec)
-              ratings [--games N] [--players a,b:3,...] [--out file] [--threads N]
+              ratings [--games N] [--players a,b:3,...] [--stockfish 1500] [--out file] [--threads N]
                                     round robin between bots; writes ratings for the website
+              strength <id[:level]> [--levels 1320,1500,1700] [--games N] [--threads N]
+                                    "how strong is my bot?": plays Stockfish levels, estimates a rating
 
         Options:
           -n, --games <N>     number of games (default 100)
           --p1 <id[:level]>   first player, e.g. random or minimax:4 (default random)
           --p2 <id[:level]>   second player (default random)
           --thinking          print each move with what the player was thinking (depth, score, ...)
+          --stockfish-path <file>  where Stockfish is (found automatically in the usual places)
+          --sf-time <ms>      Stockfish's think time per move (default 1000)
           --pgn <file>        save all games to a PGN file
           --report <file>     save a results page with a chart (open the .html file in a browser)
           --export <file>     save every position as training data (CSV: game,ply,fen,move,result)

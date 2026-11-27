@@ -44,6 +44,25 @@ public sealed class ArenaSession
     public string P2Label { get; private set; } = "";
     private BotChoice _p1 = new(), _p2 = new();
 
+    /// <summary>The players as chosen when the match started.</summary>
+    public BotChoice StartedP1 => _p1;
+    public BotChoice StartedP2 => _p2;
+
+    /// <summary>
+    /// If one side is Stockfish at a calibrated level: an estimated rating for the other side
+    /// (null otherwise). Item1 = true if the estimate is for P1.
+    /// </summary>
+    public (bool ForP1, RatingEstimate.Estimate Estimate, double Against)? StrengthEstimate
+    {
+        get
+        {
+            double? k1 = _p1.Entry.KnownRating(_p1.Level), k2 = _p2.Entry.KnownRating(_p2.Level);
+            if (k2 is double a2 && k1 is null && RatingEstimate.Performance(a2, Stats.Wins, Stats.Draws, Stats.Losses) is { } e1) return (true, e1, a2);
+            if (k1 is double a1 && k2 is null && RatingEstimate.Performance(a1, Stats.Losses, Stats.Draws, Stats.Wins) is { } e2) return (false, e2, a1);
+            return null;
+        }
+    }
+
     public List<ArenaBoard> Boards { get; } = new();
     public List<ArenaResult> Results { get; } = new();
     public MatchStats Stats { get; private set; } = new();

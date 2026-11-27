@@ -8,7 +8,7 @@ public static class AnalysisBots
 {
     private static IReadOnlyList<PlayerRegistry.Entry>? _all;
 
-    public static IReadOnlyList<PlayerRegistry.Entry> All => _all ??= PlayerRegistry.All
+    public static IReadOnlyList<PlayerRegistry.Entry> All => _all ??= PlayerRegistry.OwnBots
         .Where(e =>
         {
             try { return PlayerAnalysis.CanAnalyse(e.CreatePlayer()); }

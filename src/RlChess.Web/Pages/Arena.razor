@@ -107,6 +107,14 @@
                     <span>Rating difference for P1</span>
                     <b>@S.Stats.EloText()</b>
                 </div>
+                @if (S.StrengthEstimate is var (forP1, est, against))
+                {
+                    <div class="elo-line strength-line" title="An engine-scale rating (like the CCRL lists), from the score against Stockfish's calibrated level. Not a chess.com or lichess rating. The website's Stockfish is a lighter build thinking 1 s per move, so treat this as rough.">
+                        <span>Estimated rating for @(forP1 ? "P1" : "P2") <span class="hint">(vs Stockfish @against)</span></span>
+                        <b>@est.Rating.ToString("0") ± @est.Margin.ToString("0")@(est.OffTheScale ? "*" : "")</b>
+                    </div>
+                    @if (est.OffTheScale) { <div class="note">* won or lost every game so far: the real rating may be further out.</div> }
+                }
                 <div class="progress-line">
                     <span>@S.Results.Count of @S.Total games @(S.Finished ? "· finished" : S.Paused ? "· paused" : "")</span>
                     <span>@FormatElapsed(S.Elapsed)</span>
